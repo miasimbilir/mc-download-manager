@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:MCDM.App"
+        x:Class="MCDM.App.Views.AddDownloadWindow"
+        Title="{l:T 'New Download'}"
+        Width="540" SizeToContent="Height" CanResize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="20" Spacing="12">
+    <TextBlock Classes="title" Text="{l:T 'New Download'}" />
+    <TextBlock Classes="secondary" Text="{l:T 'One URL per line.'}" />
+    <TextBox x:Name="Urls" Height="116" AcceptsReturn="True" TextWrapping="NoWrap"
+             FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="12.5"
+             ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+    <CheckBox x:Name="AsVideo" Content="{l:T 'Download video from page (yt-dlp)'}" />
+    <StackPanel x:Name="SegmentsRow" Orientation="Horizontal" Spacing="10">
+      <TextBlock x:Name="SegmentsLabel" VerticalAlignment="Center" MinWidth="220" />
+      <Slider x:Name="Segments" Minimum="0" Maximum="16" TickFrequency="1" IsSnapToTickEnabled="True" Width="220" />
+    </StackPanel>
+    <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,6,0,0">
+      <Button x:Name="Paste" Content="{l:T 'Paste from Clipboard'}" />
+      <Button Grid.Column="2" x:Name="CancelButton" Content="{l:T 'Cancel'}" MinWidth="92" HorizontalContentAlignment="Center" IsCancel="True" />
+      <Button Grid.Column="3" x:Name="DownloadButton" Content="{l:T 'Download'}" Classes="accent" MinWidth="92" HorizontalContentAlignment="Center" Margin="8,0,0,0" IsDefault="True" />
+    </Grid>
+  </StackPanel>
+</Window>

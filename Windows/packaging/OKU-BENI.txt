@@ -1,0 +1,37 @@
+MC Download Manager — Windows
+=============================
+
+Kurulum
+-------
+1. Bu klasörü kalıcı bir yere taşıyın (örneğin Belgeler ya da C:\Programlar). Klasördeki
+   dosyalar birlikte durmalı: MCDownloadManager.exe, tools, ChromeExtension, FirefoxExtension.xpi.
+2. MCDownloadManager.exe dosyasına çift tıklayın.
+   Windows "Bilgisayarınızı korudu" uyarısı gösterirse: "Ek bilgi" > "Yine de çalıştır".
+   (Uygulama imzalı değil; kaynak kodu açık.)
+3. İlk açılışta hangi dosya türlerinin yakalanacağını seçin, ardından sihirbaz tarayıcı
+   eklentisini (Chrome, Edge, Brave, Opera, Firefox) adım adım kurdurur.
+
+Kullanım
+--------
+- Tarayıcıda bir indirme başlattığınızda uygulama devralır ve dosyayı 8 parça halinde indirir.
+- Eklenti düğmesindeki "Bu sayfadaki videoyu indir" YouTube, X, Instagram ve benzeri sitelerden video
+  indirir. İndirme başlamadan uygulama kaliteyi sorar (1080p, 720p, 360p... ya da yalnızca ses: MP3).
+  İlk YouTube indirmesinde uygulama "deno" adlı yardımcıyı kurmayı önerir; kabul edin.
+- Pencereyi kapatmak uygulamayı kapatmaz; saatin yanındaki bildirim alanında çalışmaya
+  devam eder. Çıkmak için oradaki simgeye sağ tıklayıp "Çık" deyin.
+- İndirilenler: İndirilenler\MC Download Manager
+
+Sorun olursa
+------------
+- Klasörde boş bir yere Shift + sağ tık > "PowerShell penceresini buradan aç", sonra:
+      .\MCDownloadManager.exe --selftest
+  Sonuç şu dosyaya yazılır:  %APPDATA%\MC Download Manager\selftest.txt
+- Uygulama beklenmedik biçimde kapanırsa:  %APPDATA%\MC Download Manager\crash.log
+
+Kaldırma
+--------
+Ayarlar > Genel > "Windows oturumu açıldığında başlat" işaretini kaldırın, uygulamadan çıkın,
+klasörü ve Başlat menüsündeki "MC Download Manager" kısayolunu silin. Ayarlar ve liste %APPDATA%\MC Download Manager klasöründedir.
+
+Kaynak: https://github.com/mstcvk/mc-download-manager  (özgün macOS uygulaması: Mesut Çevik, MIT)
+Gömülü araçlar: yt-dlp (Unlicense), FFmpeg (GPL, tools\ffmpeg-LICENSE.txt)

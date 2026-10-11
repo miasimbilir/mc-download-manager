@@ -1,0 +1,143 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:MCDM.App"
+        xmlns:c="using:MCDM.App.Controls"
+        xmlns:v="using:MCDM.App.Views"
+        xmlns:core="using:MCDM"
+        x:Class="MCDM.App.Views.MainWindow"
+        Title="MC Download Manager"
+        Width="1100" Height="660" MinWidth="900" MinHeight="480"
+        WindowStartupLocation="CenterScreen">
+
+  <Grid ColumnDefinitions="224,*">
+
+    <!-- Sidebar -->
+    <Border Grid.Column="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
+      <ListBox x:Name="Sidebar" Background="Transparent" Margin="6,10,6,6" SelectionMode="Single">
+        <ListBox.Styles>
+          <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Margin" Value="0,1" />
+          </Style>
+        </ListBox.Styles>
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="v:SidebarEntry">
+            <Grid ColumnDefinitions="Auto,*,Auto" Margin="{Binding Indent}">
+              <PathIcon Data="{Binding Icon}" Foreground="{DynamicResource AccentBrush}" Width="17" Height="17" />
+              <TextBlock Grid.Column="1" Text="{Binding Label}" Margin="11,0,0,0" VerticalAlignment="Center" FontWeight="{Binding Weight}" />
+              <TextBlock Grid.Column="2" Text="{Binding CountText}" Classes="secondary" FontSize="12" VerticalAlignment="Center" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+
+    <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" Background="{DynamicResource PaneBrush}">
+
+      <!-- Toolbar -->
+      <Border Grid.Row="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="10,8">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <Button x:Name="AddButton" Classes="accent" Padding="12,7" ToolTip.Tip="{l:T 'Add a download by URL (Ctrl+N)'}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{StaticResource IconLinkAdd}" />
+                <TextBlock Text="{l:T 'Add URL'}" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="StartButton" Classes="tool" Margin="6,0,0,0" ToolTip.Tip="{l:T 'Resume paused and failed downloads'}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{StaticResource IconPlay}" />
+                <TextBlock Text="{l:T 'Start Queue'}" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="StopButton" Classes="tool" ToolTip.Tip="{l:T 'Pause all downloads'}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{StaticResource IconStop}" />
+                <TextBlock Text="{l:T 'Stop All'}" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="ClearButton" Classes="tool" ToolTip.Tip="{l:T 'Remove completed and cancelled items from the list'}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <PathIcon Data="{StaticResource IconDelete}" />
+                <TextBlock Text="{l:T 'Clear Finished'}" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+          <TextBox Grid.Column="2" x:Name="Search" Width="210" Watermark="{l:T 'Search in the list'}" VerticalAlignment="Center">
+            <TextBox.InnerLeftContent>
+              <PathIcon Data="{StaticResource IconSearch}" Width="14" Height="14" Margin="9,0,0,0" Foreground="{DynamicResource SecondaryTextBrush}" />
+            </TextBox.InnerLeftContent>
+          </TextBox>
+          <Button Grid.Column="3" x:Name="SettingsButton" Classes="tool" Margin="6,0,0,0" ToolTip.Tip="{l:T 'Settings'}">
+            <PathIcon Data="{StaticResource IconSettings}" Width="18" Height="18" />
+          </Button>
+        </Grid>
+      </Border>
+
+      <!-- List -->
+      <DataGrid Grid.Row="1" x:Name="List"
+                AutoGenerateColumns="False" IsReadOnly="True"
+                CanUserResizeColumns="True" CanUserSortColumns="True" CanUserReorderColumns="False"
+                GridLinesVisibility="None" HeadersVisibility="Column" SelectionMode="Extended"
+                RowHeight="46" BorderThickness="0">
+        <DataGrid.Columns>
+          <DataGridTemplateColumn Header="{l:T 'Name'}" Width="*" MinWidth="200" SortMemberPath="FileName">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate x:DataType="core:DownloadItem">
+                <Grid ColumnDefinitions="Auto,*" Margin="12,0,8,0" VerticalAlignment="Center">
+                  <PathIcon Data="{Binding Category, Converter={x:Static l:CategoryIconConverter.Instance}}"
+                            Width="20" Height="20" Margin="0,0,11,0" Foreground="{DynamicResource SecondaryTextBrush}" />
+                  <StackPanel Grid.Column="1" Spacing="1">
+                    <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Url}" />
+                    <TextBlock Text="{Binding CategoryLabel}" Classes="secondary" FontSize="11.5" />
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn x:DataType="core:DownloadItem" Header="{l:T 'Size'}" Binding="{Binding SizeText}" Width="92" SortMemberPath="TotalBytes" />
+          <DataGridTemplateColumn Header="{l:T 'Status'}" Width="200" SortMemberPath="State">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate x:DataType="core:DownloadItem">
+                <StackPanel VerticalAlignment="Center" Spacing="5" Margin="12,0,8,0">
+                  <TextBlock Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" Classes.error="{Binding IsFailed}" ToolTip.Tip="{Binding StatusText}" />
+                  <c:SegmentBar Height="5" Width="160" HorizontalAlignment="Left" IsVisible="{Binding ShowsBar}"
+                                Segments="{Binding Segments}" Total="{Binding TotalBytes}" Fallback="{Binding Progress}"
+                                Paused="{Binding IsPaused}" Failed="{Binding IsFailed}"
+                                Track="{DynamicResource TrackBrush}" Fill="{DynamicResource AccentBrush}" />
+                </StackPanel>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
+          <DataGridTextColumn x:DataType="core:DownloadItem" Header="{l:T 'Speed'}" Binding="{Binding SpeedText}" Width="96" SortMemberPath="Speed" />
+          <DataGridTextColumn x:DataType="core:DownloadItem" Header="{l:T 'Time Left'}" Binding="{Binding EtaText}" Width="96" CanUserSort="False" />
+          <DataGridTextColumn x:DataType="core:DownloadItem" Header="{l:T 'Date Added'}" Binding="{Binding CreatedText}" Width="110" SortMemberPath="CreatedAt" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <!-- Empty state -->
+      <StackPanel Grid.Row="1" x:Name="Empty" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" IsHitTestVisible="False">
+        <PathIcon Data="{StaticResource IconArrowDownload}" Width="52" Height="52" Foreground="{DynamicResource SecondaryTextBrush}" />
+        <TextBlock x:Name="EmptyTitle" FontSize="18" HorizontalAlignment="Center" />
+        <TextBlock x:Name="EmptyHint" Classes="secondary" TextAlignment="Center" HorizontalAlignment="Center" />
+      </StackPanel>
+
+      <!-- Status bar -->
+      <Border Grid.Row="2" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="12,6">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+          <Ellipse x:Name="BridgeDot" Width="8" Height="8" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" x:Name="BridgeText" Classes="secondary" FontSize="12" Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="0,0,18,0" ToolTip.Tip="{l:T 'Unfinished downloads'}" Background="Transparent">
+            <PathIcon Data="{StaticResource IconTextBulletListLtr}" Width="13" Height="13" Foreground="{DynamicResource SecondaryTextBrush}" />
+            <TextBlock x:Name="UnfinishedText" Classes="secondary" FontSize="12" />
+          </StackPanel>
+          <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" ToolTip.Tip="{l:T 'Total download speed'}" Background="Transparent">
+            <PathIcon Data="{StaticResource IconCloudArrowDown}" Width="14" Height="14" Foreground="{DynamicResource SecondaryTextBrush}" />
+            <TextBlock x:Name="SpeedText" Classes="secondary" FontSize="12" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MCDM.Core/MCDM.Core.csproj" />
+    <Project Path="src/MCDM.App/MCDM.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MCDM.Tests/MCDM.Tests.csproj" />
+  </Folder>
+  <Folder Name="/dev/">
+    <Project Path="dev/MCDM.Shots/MCDM.Shots.csproj" />
+  </Folder>
+</Solution>

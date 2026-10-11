@@ -1,0 +1,128 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:MCDM.App"
+        xmlns:c="using:MCDM.App.Controls"
+        xmlns:v="using:MCDM.App.Views"
+        x:Class="MCDM.App.Views.DetailWindow"
+        Width="580" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterScreen">
+  <Window.Styles>
+    <Style Selector="TextBlock.k">
+      <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
+      <Setter Property="Margin" Value="0,0,18,0" />
+    </Style>
+    <Style Selector="Grid.info > TextBlock">
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="Height" Value="25" />
+    </Style>
+  </Window.Styles>
+
+  <Panel Margin="18,16">
+
+    <!-- While downloading -->
+    <StackPanel x:Name="ActiveView" Spacing="12">
+      <Grid Classes="info" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+        <TextBlock Grid.Row="0" Classes="k" Text="URL" />
+        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="UrlText" />
+        <TextBlock Grid.Row="1" Classes="k" Text="{l:T 'Status'}" />
+        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="StatusText" />
+        <TextBlock Grid.Row="2" Classes="k" Text="{l:T 'File size'}" />
+        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SizeText" />
+        <TextBlock Grid.Row="3" Classes="k" Text="{l:T 'Downloaded'}" />
+        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DownloadedText" />
+        <TextBlock Grid.Row="4" Classes="k" Text="{l:T 'Transfer rate'}" />
+        <TextBlock Grid.Row="4" Grid.Column="1" x:Name="RateText" />
+        <TextBlock Grid.Row="5" Classes="k" Text="{l:T 'Time left'}" />
+        <TextBlock Grid.Row="5" Grid.Column="1" x:Name="EtaText" />
+        <TextBlock Grid.Row="6" Classes="k" Text="{l:T 'Resume capability'}" />
+        <TextBlock Grid.Row="6" Grid.Column="1" x:Name="ResumeText" />
+        <TextBlock Grid.Row="7" Classes="k" Text="{l:T 'Save to'}" />
+        <TextBlock Grid.Row="7" Grid.Column="1" x:Name="SaveText" />
+      </Grid>
+
+      <c:SegmentBar x:Name="Bar" Height="7" Track="{DynamicResource TrackBrush}" Fill="{DynamicResource AccentBrush}" />
+
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+        <Button x:Name="ToggleDetails" MinWidth="130" HorizontalContentAlignment="Center" />
+        <CheckBox Grid.Column="1" x:Name="CloseWhenDone" Content="{l:T 'Close when completed'}" Margin="14,0,0,0" />
+        <Button Grid.Column="3" x:Name="PrimaryButton" MinWidth="92" HorizontalContentAlignment="Center" />
+        <Button Grid.Column="4" x:Name="SecondaryButton" MinWidth="92" HorizontalContentAlignment="Center" Margin="8,0,0,0" />
+      </Grid>
+
+      <StackPanel x:Name="DetailsPanel" Spacing="8">
+        <Border Height="1" Background="{DynamicResource LineBrush}" Margin="0,2,0,0" />
+
+        <!-- Connections (file downloads) -->
+        <StackPanel x:Name="ConnView" Spacing="8">
+          <TextBlock Classes="caption" HorizontalAlignment="Center" Text="{l:T 'Start positions and download progress by connections'}" />
+          <c:SegmentBar x:Name="ConnBar" Height="12" Track="{DynamicResource TrackBrush}" Fill="{DynamicResource AccentBrush}" />
+          <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="5" Background="{DynamicResource PaneBrush}" ClipToBounds="True">
+            <DockPanel>
+              <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="12,7">
+                <Grid ColumnDefinitions="44,120,120,*">
+                  <TextBlock Classes="secondary" Text="{l:T 'N.'}" />
+                  <TextBlock Grid.Column="1" Classes="secondary" Text="{l:T 'Downloaded'}" />
+                  <TextBlock Grid.Column="2" Classes="secondary" Text="{l:T 'Start'}" />
+                  <TextBlock Grid.Column="3" Classes="secondary" Text="{l:T 'Info'}" />
+                </Grid>
+              </Border>
+              <ScrollViewer Height="198">
+                <ItemsControl x:Name="Connections">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="v:ConnectionRow">
+                      <Grid ColumnDefinitions="44,120,120,*" Margin="12,5">
+                        <TextBlock Text="{Binding Index}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Received}" />
+                        <TextBlock Grid.Column="2" Text="{Binding Start}" />
+                        <TextBlock Grid.Column="3" Text="{Binding Info}" TextTrimming="CharacterEllipsis" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </DockPanel>
+          </Border>
+        </StackPanel>
+
+        <!-- yt-dlp output (video downloads) -->
+        <StackPanel x:Name="LogView" Spacing="6">
+          <TextBlock Classes="caption" Text="{l:T 'yt-dlp output'}" />
+          <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="5" Background="{DynamicResource PaneBrush}">
+            <ScrollViewer x:Name="LogScroll" Height="232" HorizontalScrollBarVisibility="Disabled">
+              <SelectableTextBlock x:Name="LogText" FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="11.5"
+                                   TextWrapping="Wrap" Margin="10,8" />
+            </ScrollViewer>
+          </Border>
+        </StackPanel>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Completed -->
+    <StackPanel x:Name="CompletedView" Spacing="16" IsVisible="False">
+      <Grid ColumnDefinitions="Auto,*">
+        <PathIcon Data="{StaticResource IconCheckmarkCircleFilled}" Width="42" Height="42" Foreground="{DynamicResource OkBrush}" Margin="0,0,14,0" />
+        <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+          <TextBlock Classes="title" Text="{l:T 'Download completed'}" />
+          <TextBlock x:Name="DoneName" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+      </Grid>
+      <Grid Classes="info" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto">
+        <TextBlock Grid.Row="0" Classes="k" Text="{l:T 'Size'}" />
+        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DoneSize" />
+        <TextBlock Grid.Row="1" Classes="k" Text="{l:T 'Location'}" />
+        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DoneLocation" />
+        <TextBlock Grid.Row="2" Classes="k" Text="URL" />
+        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="DoneUrl" />
+        <TextBlock Grid.Row="3" Classes="k" Text="{l:T 'Finished'}" />
+        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DoneAt" />
+      </Grid>
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <Button x:Name="DoneClose" Content="{l:T 'Close'}" MinWidth="92" HorizontalContentAlignment="Center" IsCancel="True" />
+        <Button Grid.Column="2" x:Name="DoneReveal" Content="{l:T 'Show in Folder'}" MinWidth="92" HorizontalContentAlignment="Center" />
+        <Button Grid.Column="3" x:Name="DoneOpen" Content="{l:T 'Open'}" Classes="accent" MinWidth="92" HorizontalContentAlignment="Center" Margin="8,0,0,0" IsDefault="True" />
+      </Grid>
+    </StackPanel>
+
+    <TextBlock x:Name="RemovedText" IsVisible="False" Text="{l:T 'This download was removed from the list.'}" Margin="0,8" />
+  </Panel>
+</Window>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MCDM</RootNamespace>
+    <AssemblyName>MCDM.Core</AssemblyName>
+    <!-- Windows-only APIs (registry, shell) are always behind OperatingSystem.IsWindows() checks. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <!-- Late-bound COM (WScript.Shell for the Start menu shortcut) -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WithCulture=false: MSBuild would otherwise read ".tr." as a culture and move these into a satellite assembly. -->
+    <EmbeddedResource Include="Strings.tr.json" LogicalName="Strings.tr.json" WithCulture="false" />
+    <EmbeddedResource Include="Strings.tr.windows.json" LogicalName="Strings.tr.windows.json" WithCulture="false" />
+    <InternalsVisibleTo Include="MCDM.Tests" />
+  </ItemGroup>
+
+</Project>

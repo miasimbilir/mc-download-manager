@@ -1,0 +1,121 @@
+{
+ "title": "Sample post video",
+ "duration": 184.789,
+ "formats": [
+  {
+   "format_id": "hls-audio-32000-Audio",
+   "ext": "mp4",
+   "vcodec": "none",
+   "tbr": 32,
+   "abr": 32,
+   "format_note": "Audio, low",
+   "protocol": "m3u8_native"
+  },
+  {
+   "format_id": "hls-audio-64000-Audio",
+   "ext": "mp4",
+   "vcodec": "none",
+   "tbr": 64,
+   "abr": 64,
+   "format_note": "Audio",
+   "protocol": "m3u8_native"
+  },
+  {
+   "format_id": "hls-audio-128000-Audio",
+   "ext": "mp4",
+   "vcodec": "none",
+   "tbr": 128,
+   "abr": 128,
+   "format_note": "Audio, high",
+   "protocol": "m3u8_native"
+  },
+  {
+   "format_id": "http-256",
+   "ext": "mp4",
+   "width": 474,
+   "height": 270,
+   "tbr": 256,
+   "abr": null,
+   "filesize_approx": 5913248,
+   "protocol": "https"
+  },
+  {
+   "format_id": "hls-85",
+   "ext": "mp4",
+   "width": 474,
+   "height": 270,
+   "vcodec": "avc1.4D4015",
+   "acodec": "none",
+   "tbr": 85.475,
+   "abr": 0,
+   "protocol": "m3u8_native",
+   "fps": null
+  },
+  {
+   "format_id": "http-832",
+   "ext": "mp4",
+   "width": 634,
+   "height": 360,
+   "tbr": 832,
+   "abr": null,
+   "filesize_approx": 19218055,
+   "protocol": "https"
+  },
+  {
+   "format_id": "hls-217",
+   "ext": "mp4",
+   "width": 634,
+   "height": 360,
+   "vcodec": "avc1.4D401E",
+   "acodec": "none",
+   "tbr": 217.099,
+   "abr": 0,
+   "protocol": "m3u8_native",
+   "fps": null
+  },
+  {
+   "format_id": "http-2176",
+   "ext": "mp4",
+   "width": 1268,
+   "height": 720,
+   "tbr": 2176,
+   "abr": null,
+   "filesize_approx": 50262607,
+   "protocol": "https"
+  },
+  {
+   "format_id": "hls-588",
+   "ext": "mp4",
+   "width": 1268,
+   "height": 720,
+   "vcodec": "avc1.64001F",
+   "acodec": "none",
+   "tbr": 588.184,
+   "abr": 0,
+   "protocol": "m3u8_native",
+   "fps": null
+  },
+  {
+   "format_id": "http-10368",
+   "ext": "mp4",
+   "width": 1900,
+   "height": 1078,
+   "tbr": 10368,
+   "abr": null,
+   "filesize_approx": 239486544,
+   "protocol": "https"
+  },
+  {
+   "format_id": "hls-2451",
+   "ext": "mp4",
+   "width": 1900,
+   "height": 1078,
+   "vcodec": "avc1.640032",
+   "acodec": "none",
+   "tbr": 2451.521,
+   "abr": 0,
+   "protocol": "m3u8_native",
+   "fps": null
+  }
+ ]
+}

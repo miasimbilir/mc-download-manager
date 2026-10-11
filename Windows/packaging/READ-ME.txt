@@ -1,0 +1,38 @@
+MC Download Manager — Windows
+=============================
+
+Install
+-------
+1. Move this folder somewhere permanent (Documents, C:\Programs, …). Keep its contents together:
+   MCDownloadManager.exe, tools, ChromeExtension, FirefoxExtension.xpi.
+2. Double-click MCDownloadManager.exe.
+   If Windows shows "Windows protected your PC": "More info" > "Run anyway".
+   (The app is not code-signed; the source is open.)
+3. On first launch choose the file types to capture; the wizard then walks you through
+   installing the browser extension (Chrome, Edge, Brave, Opera, Firefox).
+
+Use
+---
+- Start a download in the browser; the app takes it over and fetches the file in 8 parts.
+- "Download video from this page" in the extension popup downloads from YouTube, X, Instagram and
+  similar sites. Before it starts, the app asks for the quality (1080p, 720p, 360p… or audio only: MP3).
+  On the first YouTube download the app offers to install a helper called "deno"; accept it.
+- Closing the window does not quit; the app stays in the notification area next to the clock.
+  Right-click its icon and choose "Quit" to exit.
+- Files go to: Downloads\MC Download Manager
+
+Troubleshooting
+---------------
+- Shift + right-click an empty spot in this folder > "Open PowerShell window here", then:
+      .\MCDownloadManager.exe --selftest
+  The report is written to:  %APPDATA%\MC Download Manager\selftest.txt
+- If the app closes unexpectedly:  %APPDATA%\MC Download Manager\crash.log
+
+Uninstall
+---------
+Turn off Settings > General > "Start when I sign in to Windows", quit the app, delete the folder and the
+"MC Download Manager" entry in the Start menu.
+Settings and the download list live in %APPDATA%\MC Download Manager.
+
+Source: https://github.com/mstcvk/mc-download-manager  (original macOS app: Mesut Çevik, MIT)
+Bundled tools: yt-dlp (Unlicense), FFmpeg (GPL, tools\ffmpeg-LICENSE.txt)

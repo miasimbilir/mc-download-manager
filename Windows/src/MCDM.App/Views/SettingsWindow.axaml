@@ -1,0 +1,219 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="using:MCDM.App"
+        xmlns:core="using:MCDM"
+        x:Class="MCDM.App.Views.SettingsWindow"
+        x:DataType="core:AppSettings"
+        Title="{l:T 'Settings'}"
+        Width="680" Height="640" MinWidth="620" MinHeight="460"
+        WindowStartupLocation="CenterScreen">
+  <Window.Styles>
+    <Style Selector="StackPanel.page">
+      <Setter Property="Spacing" Value="12" />
+      <Setter Property="Margin" Value="18,14,18,18" />
+    </Style>
+    <Style Selector="Border.card > StackPanel">
+      <Setter Property="Spacing" Value="7" />
+    </Style>
+    <Style Selector="TabItem">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="MinHeight" Value="40" />
+    </Style>
+  </Window.Styles>
+
+  <TabControl x:Name="Tabs" Margin="0,4,0,0" Padding="0">
+
+    <!-- General -->
+    <TabItem Header="{l:T 'General'}">
+      <ScrollViewer>
+        <StackPanel Classes="page">
+          <Border Classes="card">
+            <StackPanel>
+              <TextBlock Classes="section" Text="{l:T 'Downloads'}" />
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                <TextBlock Text="{l:T 'Download folder'}" VerticalAlignment="Center" Margin="0,0,14,0" />
+                <TextBlock Grid.Column="1" Text="{Binding DownloadDirectory}" Classes="secondary" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DownloadDirectory}" />
+                <Button Grid.Column="2" x:Name="ShowFolder" Content="{l:T 'Show'}" Margin="8,0,0,0" />
+                <Button Grid.Column="3" x:Name="ChooseFolder" Content="{l:T 'Choose…'}" Margin="8,0,0,0" />
+              </Grid>
+              <CheckBox IsChecked="{Binding OrganizeByCategory}" Content="{l:T 'Organize downloads into category subfolders (Video, Music, Archives…)'}" />
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel>
+              <TextBlock Classes="section" Text="{l:T 'Connections'}" />
+              <Grid ColumnDefinitions="260,*">
+                <TextBlock x:Name="SegmentLabel" VerticalAlignment="Center" />
+                <Slider Grid.Column="1" x:Name="SegmentSlider" Minimum="1" Maximum="16" TickFrequency="1" IsSnapToTickEnabled="True" />
+              </Grid>
+              <TextBlock Classes="caption" Text="{l:T 'Each file is downloaded with up to this many parallel connections (4–10 recommended).'}" />
+              <Grid ColumnDefinitions="260,*" Margin="0,4,0,0">
+                <TextBlock x:Name="ConcurrentLabel" VerticalAlignment="Center" />
+                <Slider Grid.Column="1" x:Name="ConcurrentSlider" Minimum="1" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True" />
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="section" Text="{l:T 'Behaviour'}" />
+              <CheckBox IsChecked="{Binding AutoStart}" Content="{l:T 'Start new downloads immediately'}" />
+              <CheckBox IsChecked="{Binding NotifyOnComplete}" Content="{l:T 'Show a notification when a download completes'}" />
+              <CheckBox IsChecked="{Binding ShowDetailOnStart}" Content="{l:T 'Open the download window when a download starts'}" />
+              <CheckBox IsChecked="{Binding AutoCloseDetail}" Content="{l:T 'Close the download window automatically when completed'}" />
+              <CheckBox IsChecked="{Binding WatchClipboard}" Content="{l:T 'Watch the clipboard for links and ask to download them'}" />
+              <TextBlock Classes="caption" Text="{l:T 'Only links that point to a captured file type trigger the prompt. You can also paste a link into the main window with Ctrl+V.'}" />
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="section" Text="{l:T 'Windows startup'}" />
+              <CheckBox x:Name="Startup" Content="{l:T 'Start MC Download Manager when I sign in to Windows'}" />
+              <TextBlock x:Name="StartupError" Classes="caption error" IsVisible="False" />
+              <CheckBox IsChecked="{Binding StartInTray}" Content="{l:T 'When started with Windows, stay in the notification area without opening the window'}" />
+              <TextBlock Classes="caption" Text="{l:T 'The app keeps running in the notification area so browser extensions can hand over downloads at any time. Closing the window does not quit; use Quit from the tray icon.'}" />
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="3">
+                <TextBlock x:Name="VersionText" />
+                <TextBlock Classes="caption" Text="{l:T 'Windows port of the open-source macOS app by Mesut Çevik (MIT License).'}" />
+              </StackPanel>
+              <Button Grid.Column="1" x:Name="ProjectPage" Content="{l:T 'Project Page'}" VerticalAlignment="Center" />
+            </Grid>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <!-- File types -->
+    <TabItem Header="{l:T 'File Types'}">
+      <ScrollViewer>
+        <StackPanel Classes="page">
+          <Border Classes="card">
+            <StackPanel>
+              <TextBlock Classes="section" Text="{l:T 'Captured file types'}" />
+              <TextBlock Classes="caption" Text="{l:T 'Browser downloads and copied links with these extensions are handed to the app. Everything else stays in the browser.'}" />
+              <ContentControl x:Name="CaptureHost" Margin="0,6,0,0" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <!-- Browser extensions -->
+    <TabItem Header="{l:T 'Browser Extensions'}">
+      <ScrollViewer>
+        <StackPanel Classes="page">
+          <Border Classes="card">
+            <StackPanel>
+              <TextBlock Classes="section" Text="{l:T 'Browser extensions'}" />
+              <TextBlock Classes="caption" Text="{l:T 'The guided setup walks you through each installed browser one at a time: Google Chrome, Microsoft Edge, Brave and Opera (loaded from a folder), Firefox (signed add-on, one click).'}" />
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4">
+                <Button x:Name="OpenWizard" Classes="accent">
+                  <StackPanel Orientation="Horizontal" Spacing="7">
+                    <PathIcon Data="{StaticResource IconWand}" />
+                    <TextBlock Text="{l:T 'Open Setup Wizard…'}" />
+                  </StackPanel>
+                </Button>
+                <Button x:Name="RefreshButton" Content="{l:T 'Refresh Status'}" />
+              </StackPanel>
+              <StackPanel x:Name="BrowserList" Spacing="2" />
+              <Border Height="1" Background="{DynamicResource LineBrush}" Margin="0,4" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock x:Name="PluginPath" Classes="caption" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <Button Grid.Column="1" x:Name="ShowPlugins" Content="{l:T 'Show Plugin Folder'}" Margin="8,0,0,0" />
+              </Grid>
+            </StackPanel>
+          </Border>
+          <Border Classes="card">
+            <StackPanel>
+              <TextBlock Classes="section" Text="{l:T 'Local bridge'}" />
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="{l:T 'Port'}" VerticalAlignment="Center" />
+                <TextBox x:Name="Port" Width="90" MaxLength="5" />
+                <Ellipse x:Name="BridgeDot" Width="8" Height="8" VerticalAlignment="Center" />
+                <TextBlock x:Name="BridgeStatus" Classes="caption" VerticalAlignment="Center" />
+              </StackPanel>
+              <TextBlock Classes="caption" Text="{l:T 'The extension uses port 48213 by default. If you change it here, enter the same port in the extension settings.'}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <!-- Video -->
+    <TabItem Header="{l:T 'Video'}">
+      <ScrollViewer>
+        <StackPanel Classes="page">
+          <Border Classes="card">
+            <StackPanel>
+              <TextBlock Classes="section" Text="{l:T 'Site cookies (YouTube age verification, members-only videos)'}" />
+              <TextBlock Classes="caption" Text="{l:T 'Some videos require a signed-in account. Export the site’s cookies from your browser as a cookies.txt file (Netscape format) and import it here; they are passed to yt-dlp for video downloads. Downloads started from the browser extension already carry the browser’s cookies.'}" />
+              <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,0">
+                <StackPanel Spacing="2" VerticalAlignment="Center">
+                  <TextBlock x:Name="CookieStatus" TextTrimming="CharacterEllipsis" />
+                  <TextBlock x:Name="CookieDetail" Classes="caption" />
+                </StackPanel>
+                <Button Grid.Column="1" x:Name="ImportCookies" Content="{l:T 'Import cookies.txt…'}" Margin="8,0,0,0" />
+                <Button Grid.Column="2" x:Name="ClearCookies" Content="{l:T 'Clear'}" Margin="8,0,0,0" />
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel>
+              <TextBlock Classes="section" Text="yt-dlp" />
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="2" VerticalAlignment="Center">
+                  <TextBlock x:Name="YtDlpTitle" />
+                  <TextBlock x:Name="YtDlpPathText" Classes="caption" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Button Grid.Column="1" x:Name="InstallYtDlp" Margin="8,0,0,0" />
+              </Grid>
+              <ProgressBar x:Name="InstallProgress" Minimum="0" Maximum="1" Height="4" IsVisible="False" />
+              <TextBlock x:Name="InstallMessage" Classes="caption" IsVisible="False" />
+              <TextBlock Classes="caption" Text="{l:T 'yt-dlp and ffmpeg are bundled with the app. “Update” downloads the latest yt-dlp release from GitHub into the app data folder and uses it instead of the bundled copy. Update when YouTube downloads stop working.'}" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBox Text="{Binding YtdlpPath}" Watermark="{l:T 'Custom yt-dlp path (empty = bundled)'}" />
+                <Button Grid.Column="1" x:Name="ChooseYtDlp" Content="{l:T 'Choose…'}" Margin="8,0,0,0" />
+              </Grid>
+              <Border Height="1" Background="{DynamicResource LineBrush}" Margin="0,4" />
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="2" VerticalAlignment="Center">
+                  <TextBlock x:Name="DenoTitle" />
+                  <TextBlock x:Name="DenoPathText" Classes="caption" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Button Grid.Column="1" x:Name="InstallDeno" Margin="8,0,0,0" />
+              </Grid>
+              <TextBlock Classes="caption" Text="{l:T 'YouTube requires a JavaScript runtime to unlock video streams. deno is downloaded from its official GitHub releases (checksum verified) into the app data folder.'}" />
+              <TextBlock x:Name="FfmpegText" Classes="caption" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel>
+              <TextBlock Classes="section" Text="{l:T 'Default format'}" />
+              <CheckBox IsChecked="{Binding AskVideoQuality}" Content="{l:T 'Ask for the quality before each video download'}" />
+              <TextBlock Classes="caption" Text="{l:T 'Lists the resolutions the video really offers, with their sizes, and audio only (MP3 / M4A). Works wherever yt-dlp does: YouTube, X, Instagram and others. When it is off, the choices below apply.'}" Margin="0,0,0,6" />
+              <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <TextBlock Text="{l:T 'Container'}" VerticalAlignment="Center" />
+                <ComboBox Grid.Column="1" x:Name="ContainerBox" HorizontalAlignment="Stretch" />
+                <TextBlock Grid.Row="1" Text="{l:T 'Maximum resolution'}" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="1" Grid.Column="1" x:Name="HeightBox" HorizontalAlignment="Stretch" />
+              </Grid>
+              <TextBlock Classes="caption" Text="{l:T 'Default: MP4 at up to 1080p. Streams are merged with the bundled ffmpeg.'}" />
+              <TextBox Text="{Binding VideoFormat}" Watermark="{l:T 'Custom yt-dlp -f expression (overrides the pickers)'}" />
+              <SelectableTextBlock x:Name="Effective" Classes="caption" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+  </TabControl>
+</Window>

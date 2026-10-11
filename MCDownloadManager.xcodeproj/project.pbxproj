@@ -30,8 +30,10 @@
 		8E5349391D8DF88F50F012EE /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DD9E371341F53169BBB893E /* Formatters.swift */; };
 		8FEF4B3AD7DD9332DD334238 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D706B75CF6A92DE848A1B70 /* AppSettings.swift */; };
 		9854C3060059240B556E6B3D /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 1F7EA964395BCFECE820DEDF /* Localizable.xcstrings */; };
+		A499632D1294D66C49C7D9D6 /* NativeHostRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6730053207B43287B7BC2434 /* NativeHostRegistry.swift */; };
 		A88422645DD9A03CCC3056AB /* DownloadDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C449D1F34DAA3E448231E2A /* DownloadDetailView.swift */; };
 		AC784500F340D94A3AC04673 /* LocalServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB398706B5B1AF31514846CB /* LocalServer.swift */; };
+		AF1DE98A2478823D20C428ED /* NativeHost in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 8EC1BDE51B730041C5FB666F /* NativeHost */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		AF871E2AEE758336EB37EB6C /* SafariExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D63B5A8793FD88DB85E01AB5 /* SafariExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		BDB0248A098E8E7B8CF57A04 /* popup.js in Resources */ = {isa = PBXBuildFile; fileRef = 56D9E6332000F44F0162771B /* popup.js */; };
 		C367B0CBD2C8DAE0A4A1BA32 /* AddDownloadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586B8190F17D737DA9DA87A /* AddDownloadView.swift */; };
@@ -41,10 +43,18 @@
 		EA0BD54DF6C5AE59D386CDBB /* ToolInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 842F422B68150676664D0F41 /* ToolInstaller.swift */; };
 		EF65281669A508342D149244 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6DBC764000EE3129062C866 /* SafariWebExtensionHandler.swift */; };
 		F6E32EAA739C843060EA71E4 /* icons in Resources */ = {isa = PBXBuildFile; fileRef = 4F32204A8C002EDB7A8CA064 /* icons */; };
+		FF36B17C060542ACFDDD98FD /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78315EAEA35A1BB070808C40 /* main.swift */; };
 		FF7DBBC49FB6672768627A73 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A5CC4471590244550393166 /* App.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		9A6F0063CE8B08353BE4EF00 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 75CB805ACAEFDC07DD6AB663 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F0D22D0E6BB57BFE959CB1BA;
+			remoteInfo = NativeHost;
+		};
 		F91083E7D6804E04A9D85784 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 75CB805ACAEFDC07DD6AB663 /* Project object */;
@@ -64,6 +74,17 @@
 				AF871E2AEE758336EB37EB6C /* SafariExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1443CAECF52A1778789FE66 /* Embed Dependencies */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				AF1DE98A2478823D20C428ED /* NativeHost in Embed Dependencies */,
+			);
+			name = "Embed Dependencies";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -86,10 +107,13 @@
 		56D9E6332000F44F0162771B /* popup.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = popup.js; sourceTree = "<group>"; };
 		59CEC5EB1D2E01C02E4ACE29 /* popup.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = popup.css; sourceTree = "<group>"; };
 		5B96EDDD486AAAA976EDFCDA /* VideoDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoDownloader.swift; sourceTree = "<group>"; };
+		6730053207B43287B7BC2434 /* NativeHostRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHostRegistry.swift; sourceTree = "<group>"; };
+		78315EAEA35A1BB070808C40 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		7BCC539B595281956E1B71FF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		83107AA23EE2750714A29556 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		842F422B68150676664D0F41 /* ToolInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolInstaller.swift; sourceTree = "<group>"; };
 		8AC0FDA8C0D811D2E0C9C87E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		8EC1BDE51B730041C5FB666F /* NativeHost */ = {isa = PBXFileReference; includeInIndex = 0; path = NativeHost; sourceTree = BUILT_PRODUCTS_DIR; };
 		99D891C2A3BF44CE3FFD4A94 /* AppPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPresence.swift; sourceTree = "<group>"; };
 		9A3FF3731D800D3C74501F5F /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = popup.html; sourceTree = "<group>"; };
 		9B6380AF715E1141FD889709 /* _locales */ = {isa = PBXFileReference; lastKnownFileType = folder; name = _locales; path = Extension/_locales; sourceTree = SOURCE_ROOT; };
@@ -128,6 +152,7 @@
 			children = (
 				34705860BD06237ED4BCF1A0 /* App */,
 				03FBF32F6E9C1FFC801C75EB /* Extension */,
+				B1D336FB2E27EA88A2BF7EB0 /* NativeHost */,
 				51C676B5E1EFB2B0E56E8934 /* SafariExtension */,
 				BB5D7ACB3077BB68ACAC0EF2 /* Products */,
 			);
@@ -148,6 +173,7 @@
 			children = (
 				99D891C2A3BF44CE3FFD4A94 /* AppPresence.swift */,
 				039A6DF1CFE03501E9B0A401 /* BrowserIntegration.swift */,
+				6730053207B43287B7BC2434 /* NativeHostRegistry.swift */,
 				095EA4F516946A62ACD35B00 /* SiteLoginManager.swift */,
 				842F422B68150676664D0F41 /* ToolInstaller.swift */,
 				07140FDF4FFB084659EE61A2 /* UpdateChecker.swift */,
@@ -217,10 +243,19 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
+		B1D336FB2E27EA88A2BF7EB0 /* NativeHost */ = {
+			isa = PBXGroup;
+			children = (
+				78315EAEA35A1BB070808C40 /* main.swift */,
+			);
+			path = NativeHost;
+			sourceTree = "<group>";
+		};
 		BB5D7ACB3077BB68ACAC0EF2 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				054B3261F9ECB1DD226D703B /* MCDownloadManager.app */,
+				8EC1BDE51B730041C5FB666F /* NativeHost */,
 				D63B5A8793FD88DB85E01AB5 /* SafariExtension.appex */,
 			);
 			name = Products;
@@ -249,6 +284,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		F0D22D0E6BB57BFE959CB1BA /* NativeHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3F77E72812133C16FD32358A /* Build configuration list for PBXNativeTarget "NativeHost" */;
+			buildPhases = (
+				99BF7FF3D2CC2C2D4658B522 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NativeHost;
+			packageProductDependencies = (
+			);
+			productName = NativeHost;
+			productReference = 8EC1BDE51B730041C5FB666F /* NativeHost */;
+			productType = "com.apple.product-type.tool";
+		};
 		F21E3DDDA65BCB970F6E6583 /* MCDownloadManager */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 1749E037BB5E103875A29B6D /* Build configuration list for PBXNativeTarget "MCDownloadManager" */;
@@ -257,11 +309,13 @@
 				287C770EB6CCF2BF43DF64F3 /* Embed yt-dlp & ffmpeg (Contents/Helpers) */,
 				A1D0951663889D9D42825B8D /* Resources */,
 				32247CC1C76F17B011623913 /* Embed Foundation Extensions */,
+				A1443CAECF52A1778789FE66 /* Embed Dependencies */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				AFF73DAA55588C1DE2C06F89 /* PBXTargetDependency */,
+				240342C5D522DB06189C9489 /* PBXTargetDependency */,
 			);
 			name = MCDownloadManager;
 			packageProductDependencies = (
@@ -297,6 +351,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
+					F0D22D0E6BB57BFE959CB1BA = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
 					F21E3DDDA65BCB970F6E6583 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
@@ -323,6 +381,7 @@
 			projectRoot = "";
 			targets = (
 				F21E3DDDA65BCB970F6E6583 /* MCDownloadManager */,
+				F0D22D0E6BB57BFE959CB1BA /* NativeHost */,
 				F2E41E024223004254D05256 /* SafariExtension */,
 			);
 		};
@@ -406,6 +465,7 @@
 				8E5349391D8DF88F50F012EE /* Formatters.swift in Sources */,
 				AC784500F340D94A3AC04673 /* LocalServer.swift in Sources */,
 				780C3DB40CB6A6C5BEB669F4 /* Models.swift in Sources */,
+				A499632D1294D66C49C7D9D6 /* NativeHostRegistry.swift in Sources */,
 				151B1283A95CE6C3744174FF /* SegmentedDownloader.swift in Sources */,
 				CCFECC40BA806C9CE8D283F7 /* ServerController.swift in Sources */,
 				4ABFFD403AF2BD3F56116B71 /* SettingsView.swift in Sources */,
@@ -417,9 +477,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		99BF7FF3D2CC2C2D4658B522 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FF36B17C060542ACFDDD98FD /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		240342C5D522DB06189C9489 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F0D22D0E6BB57BFE959CB1BA /* NativeHost */;
+			targetProxy = 9A6F0063CE8B08353BE4EF00 /* PBXContainerItemProxy */;
+		};
 		AFF73DAA55588C1DE2C06F89 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = F2E41E024223004254D05256 /* SafariExtension */;
@@ -463,7 +536,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
@@ -485,7 +558,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = 1.3.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -553,6 +626,22 @@
 			};
 			name = Release;
 		};
+		7FAB3C7A9A8233C0D911C722 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mesutcevik.mcdownloadmanager.nativehost;
+				PRODUCT_NAME = "mcdm-native-host";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
 		E05184EF78BB82695439D242 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -588,7 +677,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
@@ -604,7 +693,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = 1.3.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -635,6 +724,22 @@
 			};
 			name = Debug;
 		};
+		F20ECAF984D44EAF9FEEAA75 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mesutcevik.mcdownloadmanager.nativehost;
+				PRODUCT_NAME = "mcdm-native-host";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -652,6 +757,15 @@
 			buildConfigurations = (
 				38A02C4203C63B3848D112E9 /* Debug */,
 				4AFA59A90E07CF0EE5E64C48 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		3F77E72812133C16FD32358A /* Build configuration list for PBXNativeTarget "NativeHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7FAB3C7A9A8233C0D911C722 /* Debug */,
+				F20ECAF984D44EAF9FEEAA75 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

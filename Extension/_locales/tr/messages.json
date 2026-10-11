@@ -140,5 +140,8 @@
   },
   "popupRemove": {
     "message": "Listeden kaldır"
+  },
+  "popupAutoLaunch": {
+    "message": "İndirme gelince uygulamayı aç"
   }
 }

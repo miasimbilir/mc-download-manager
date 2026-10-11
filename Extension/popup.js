@@ -39,10 +39,11 @@ async function refresh() {
     ? t('popupConnected', [String(st.app.version)]) + (st.app.active ? ` · ${t('popupActive', [String(st.app.active)])}` : '')
     : t('popupOffline');
   $('offline').classList.toggle('hidden', online);
-  $('launch').classList.toggle('hidden', !(st && st.isSafari));
+  $('launch').classList.toggle('hidden', !(st && st.canLaunch));
   if (st && st.settings) {
     $('intercept').checked = !!st.settings.intercept;
     $('sniff').checked = !!st.settings.sniff;
+    $('autoLaunch').checked = st.settings.autoLaunch !== false;
     $('port').value = st.settings.port;
     $('minSize').value = st.settings.minSizeMB || 0;
   }
@@ -160,6 +161,7 @@ $('launch').onclick = async () => {
 };
 $('intercept').onchange = (e) => send({ type: 'setSettings', settings: { intercept: e.target.checked } });
 $('sniff').onchange = (e) => send({ type: 'setSettings', settings: { sniff: e.target.checked } });
+$('autoLaunch').onchange = (e) => send({ type: 'setSettings', settings: { autoLaunch: e.target.checked } });
 $('port').onchange = (e) => send({ type: 'setSettings', settings: { port: parseInt(e.target.value, 10) || 48213 } }).then(refresh);
 $('minSize').onchange = (e) => send({ type: 'setSettings', settings: { minSizeMB: parseInt(e.target.value, 10) || 0 } });
 

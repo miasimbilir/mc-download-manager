@@ -31,6 +31,7 @@ Open the DMG, drag the app to *Applications*, done. The interface is in **Englis
 - **Browser integration** — one shared WebExtension for Safari, Google Chrome, Brave and Firefox. A step-by-step setup wizard handles each browser
   one at a time (extension files are placed in `~/Downloads/MC Download Manager/Browser Plugins/`).
   The browser download is cancelled and handed to the app together with cookies, `Referer` and `User-Agent`; captured file types are configurable.
+  If the app is not running, the extension starts it (native messaging) and hands the download over once it is up; if it cannot, the browser keeps the download.
 - **Video downloads** — `<video>`, `.m3u8` and `.mpd` streams on the page are detected; "Download video from this page" uses the bundled
   yt-dlp (with ffmpeg merging). Default output is MP4 up to 1080p (container and resolution configurable). Browser cookies are passed to
   yt-dlp, and an in-app sign-in window handles age-restricted videos. yt-dlp can be updated from GitHub with one click.
@@ -130,6 +131,7 @@ App/Sources/DownloadManager/
   Views/                             SwiftUI (main window, download window, settings)
 App/Resources/Localizable.xcstrings  English (base) + Turkish strings
 SafariExtension/                     Safari Web Extension target (native messaging launches the app)
+NativeHost/                          native messaging host for Chrome/Brave/Edge/Firefox (launches the app; registered by NativeHostRegistry)
 Extension/                           shared WebExtension (manifest v3, background, content, popup, _locales)
 scripts/                             fetch-tools.sh, build.sh, pack-extension.sh, update-cask.sh, make_icons.swift
 project.yml                          xcodegen project spec

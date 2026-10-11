@@ -158,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppPresence.shared.finishLaunch()
         LoginItem.registerByDefaultIfNeeded()
+        DispatchQueue.global(qos: .utility).async { NativeHostRegistry.register() }
         if AppSettings.shared.onboardingDone { Self.sharedStore?.prepareDownloadFolder() }
         if Bundle.main.bundleURL.pathExtension == "app" {
             let center = UNUserNotificationCenter.current()

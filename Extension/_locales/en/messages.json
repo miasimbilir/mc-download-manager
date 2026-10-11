@@ -140,5 +140,8 @@
   },
   "popupRemove": {
     "message": "Remove from list"
+  },
+  "popupAutoLaunch": {
+    "message": "Open the app when a download arrives"
   }
 }

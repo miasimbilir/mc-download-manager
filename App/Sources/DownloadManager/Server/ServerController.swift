@@ -29,6 +29,14 @@ final class ServerController: ObservableObject {
             }
         }
         extensionConnections[browser] = Date()
+        // Chromium extension ids may call the native host that launches the app (see NativeHostRegistry).
+        var extensionID = req.headers["x-mcdm-extension-id"]
+        if let origin = req.headers["origin"], origin.hasPrefix("chrome-extension://") {
+            extensionID = String(origin.dropFirst("chrome-extension://".count).prefix { $0 != "/" })
+        }
+        if let id = extensionID?.lowercased(), NativeHostRegistry.isValidChromiumID(id) {
+            DispatchQueue.global(qos: .utility).async { NativeHostRegistry.noteExtensionID(id) }
+        }
     }
 
     private var server: LocalServer?
@@ -36,7 +44,7 @@ final class ServerController: ObservableObject {
     private let settings: AppSettings
     private var cancellable: AnyCancellable?
 
-    static let version = "1.2.0"
+    static let version = "1.3.0"
 
     init(store: DownloadStore, settings: AppSettings) {
         self.store = store

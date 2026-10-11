@@ -7,7 +7,9 @@ const t = (k, subs) => { try { return api.i18n.getMessage(k, subs) || k; } catch
 const IS_FIREFOX = typeof browser !== 'undefined' && String(browser.runtime.getURL('')).startsWith('moz-extension:');
 const IS_SAFARI = !IS_FIREFOX && typeof browser !== 'undefined' && !!browser.runtime.sendNativeMessage && !chrome.downloads?.onDeterminingFilename;
 
-const DEFAULTS = { port: 48213, intercept: true, minSizeMB: 0, sniff: true };
+const DEFAULTS = { port: 48213, intercept: true, minSizeMB: 0, sniff: true, autoLaunch: true };
+// Native messaging host bundled with the app (Chrome/Brave/Edge/Firefox); Safari talks to its app extension.
+const NATIVE_HOST = 'com.mesutcevik.mcdownloadmanager';
 const BROWSER = IS_FIREFOX ? 'firefox' : IS_SAFARI ? 'safari' : (navigator.brave ? 'brave' : (/Edg\//.test(navigator.userAgent) ? 'edge' : 'chrome'));
 
 const MEDIA_EXT = /\.(mp4|m4v|webm|mkv|mov|avi|flv|mp3|m4a|aac|ogg|opus|wav|flac)(\?|#|$)/i;
@@ -27,7 +29,8 @@ const base = (s) => `http://127.0.0.1:${s.port}`;
 // Custom header = proof the request comes from an extension: ordinary web pages cannot send it
 // without a CORS preflight, and the bridge only grants CORS to extension origins. Chrome omits the
 // Origin header on extension GET requests that are covered by host permissions, so Origin alone is not enough.
-const BRIDGE_HEADERS = { 'X-MCDM-Extension': BROWSER };
+// The id lets the app allow this (Chromium) extension to call the native host that launches it.
+const BRIDGE_HEADERS = { 'X-MCDM-Extension': BROWSER, 'X-MCDM-Extension-Id': api.runtime.id };
 
 // ---------- App communication ----------
 async function ping(settings) {
@@ -40,6 +43,7 @@ async function ping(settings) {
     if (!r.ok) return null;
     const app = await r.json();
     if (app && app.active > 0) startProgress();
+    if (app && Array.isArray(app.captureExtensions)) api.storage.local.set({ captureExtensions: app.captureExtensions });
     return app;
   } catch {
     return null;
@@ -140,10 +144,16 @@ async function sendToApp({ url, filename, referer, kind }) {
     url, filename: filename || '', referer: referer || '', kind: kind || 'file',
     userAgent: navigator.userAgent, cookieHeader: ck.header, cookies: ck.list,
   };
+  const post = () => fetch(base(settings) + '/download', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...BRIDGE_HEADERS }, body: JSON.stringify(payload),
+  });
   try {
-    const r = await fetch(base(settings) + '/download', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', ...BRIDGE_HEADERS }, body: JSON.stringify(payload),
-    });
+    let r;
+    try { r = await post(); } catch (e) {
+      // App not running: start it and try once more.
+      if (!settings.autoLaunch || !(await ensureApp(settings))) throw e;
+      r = await post();
+    }
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'app error');
     notify(kind === 'video' ? t('notifVideoTitle') : t('notifSentTitle'), filename || url);
@@ -155,15 +165,37 @@ async function sendToApp({ url, filename, referer, kind }) {
   }
 }
 
-// Safari: launch the app through native messaging
+// Launch the app through native messaging: Safari's app extension, or the host bundled with the app
+// (registered by the app in each browser's NativeMessagingHosts folder).
 async function launchApp() {
   if (!api.runtime.sendNativeMessage) return false;
   try {
-    const r = await api.runtime.sendNativeMessage('application.id', { action: 'launchApp' });
+    const r = await api.runtime.sendNativeMessage(IS_SAFARI ? 'application.id' : NATIVE_HOST, { action: 'launchApp' });
     return !!(r && r.ok);
   } catch {
     return false;
   }
+}
+
+// Returns the app's ping answer, starting the app first when it is not running (waits up to ~12 s).
+let launching = null;
+async function ensureApp(settings) {
+  const app = await ping(settings);
+  if (app) return app;
+  if (!launching) {
+    launching = (async () => {
+      if (!(await launchApp())) return null;
+      const until = Date.now() + 12000;
+      while (Date.now() < until) {
+        await new Promise((r) => setTimeout(r, 500));
+        const a = await ping(settings);
+        if (a) return a;
+      }
+      return null;
+    })();
+    launching.finally(() => { launching = null; });
+  }
+  return launching;
 }
 
 // ---------- Capture file-type filter (list comes from the app) ----------
@@ -188,7 +220,12 @@ async function interceptDownload(item) {
   if (!/^https?:/i.test(url)) return false;
   if (item.byExtensionId) return false;
   if (settings.minSizeMB > 0 && item.totalBytes > 0 && item.totalBytes < settings.minSizeMB * 1024 * 1024) return false;
-  const app = await ping(settings);
+  let app = await ping(settings);
+  if (!app && settings.autoLaunch) {
+    // Only start the app for file types it would take (list remembered from its last answer).
+    const { captureExtensions } = await api.storage.local.get('captureExtensions');
+    if (matchesCaptureTypes({ captureExtensions }, item.filename || '', url)) app = await ensureApp(settings);
+  }
   if (!app) return false;
   if (!matchesCaptureTypes(app, item.filename || '', url)) return false;
 
@@ -373,7 +410,11 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case 'status': {
           const settings = await getSettings();
           const app = await ping(settings);
-          sendResponse({ online: !!app, app, settings, clickIntercept: !api.downloads?.onDeterminingFilename, isSafari: IS_SAFARI, captureExtensions: (app && app.captureExtensions) || [] });
+          const cached = app ? null : (await api.storage.local.get('captureExtensions')).captureExtensions;
+          sendResponse({
+            online: !!app, app, settings, clickIntercept: !api.downloads?.onDeterminingFilename, isSafari: IS_SAFARI,
+            canLaunch: !!api.runtime.sendNativeMessage, captureExtensions: (app && app.captureExtensions) || cached || [],
+          });
           break;
         }
         case 'getMedia': sendResponse(await readMedia(msg.tabId)); break;

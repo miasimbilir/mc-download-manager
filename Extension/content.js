@@ -24,11 +24,24 @@
   refresh();
   setInterval(refresh, 30000);
 
+  function send(msg) {
+    return new Promise((resolve) => {
+      try {
+        if (IS_FIREFOX) browser.runtime.sendMessage(msg).then(resolve, () => resolve(null));
+        else api.runtime.sendMessage(msg, (r) => resolve(api.runtime.lastError ? null : r));
+      } catch { resolve(null); }
+    });
+  }
+
+  let passThrough = null;   // link re-clicked after the app could not take the download
   document.addEventListener('click', (e) => {
-    if (!state.clickIntercept || !state.online || !state.settings?.intercept) return;
+    if (!state.clickIntercept || !state.settings?.intercept) return;
+    // While the app is closed the background script can start it (native messaging) before handing over.
+    if (!state.online && !(state.canLaunch && state.settings?.autoLaunch)) return;
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
     const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     if (!a) return;
+    if (a === passThrough) { passThrough = null; return; }
     const href = a.href;
     if (!/^https?:/i.test(href)) return;
     const list = state.captureExtensions || [];
@@ -37,7 +50,12 @@
     if (list.length ? !(ext && list.includes(ext)) : !(a.hasAttribute('download') || DL_EXT.test(href))) return;
     e.preventDefault();
     e.stopPropagation();
-    api.runtime.sendMessage({ type: 'download', url: href, filename: a.getAttribute('download') || '', referer: location.href, kind: 'file' });
+    send({ type: 'download', url: href, filename: a.getAttribute('download') || '', referer: location.href, kind: 'file' }).then((r) => {
+      if (r && r.ok) { if (!state.online) refresh(); return; }
+      // The app is unavailable: let the browser handle the click after all.
+      passThrough = a;
+      a.click();
+    });
   }, true);
 
   const reported = new Set();

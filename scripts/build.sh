@@ -4,6 +4,7 @@
 #   scripts/build.sh                 → build/MC Download Manager <version>.dmg (ad-hoc signed)
 #   CODESIGN_IDENTITY="Developer ID Application: Ad Soyad (TEAMID)" scripts/build.sh
 #   ... + NOTARY_PROFILE=<notarytool keychain profili>  → notarize + staple
+#   ... or NOTARY_KEY=<AuthKey_….p8> NOTARY_KEY_ID=<key id> NOTARY_ISSUER=<issuer id>  (App Store Connect API key, no keychain)
 #
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,8 +28,15 @@ pick_identity() {
 }
 IDENTITY="${CODESIGN_IDENTITY:-$(pick_identity)}"
 # Notarization profile (xcrun notarytool store-credentials). Defaults to the local profile when it exists.
-if [[ -z "${NOTARY_PROFILE:-}" && "$IDENTITY" != "-" ]] && xcrun notarytool history --keychain-profile "mc-download-manager" >/dev/null 2>&1; then
+if [[ -z "${NOTARY_PROFILE:-}" && -z "${NOTARY_KEY:-}" && "$IDENTITY" != "-" ]] && xcrun notarytool history --keychain-profile "mc-download-manager" >/dev/null 2>&1; then
   NOTARY_PROFILE="mc-download-manager"
+fi
+# notarytool credentials: an API key file passed directly, else the keychain profile.
+NOTARY_AUTH=()
+if [[ -n "${NOTARY_KEY:-}" ]]; then
+  NOTARY_AUTH=(--key "$NOTARY_KEY" --key-id "${NOTARY_KEY_ID:?NOTARY_KEY_ID required with NOTARY_KEY}" --issuer "${NOTARY_ISSUER:?NOTARY_ISSUER required with NOTARY_KEY}")
+elif [[ -n "${NOTARY_PROFILE:-}" ]]; then
+  NOTARY_AUTH=(--keychain-profile "$NOTARY_PROFILE")
 fi
 VERSION="$(sed -n 's/.*MARKETING_VERSION: "\(.*\)"/\1/p' project.yml | head -1)"
 
@@ -97,11 +105,11 @@ codesign --force --options runtime $TS \
   --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict "$APP" && echo "  signature verified"
 
-if [[ -n "${NOTARY_PROFILE:-}" && "$IDENTITY" != "-" ]]; then
-  echo "▶ Notarization — app ($NOTARY_PROFILE)"
+if (( ${#NOTARY_AUTH} )) && [[ "$IDENTITY" != "-" ]]; then
+  echo "▶ Notarization — app"
   ZIP="$BUILD/$APP_NAME.zip"
   rm -f "$ZIP"; ditto -c -k --keepParent "$APP" "$ZIP"
-  xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun notarytool submit "$ZIP" "${NOTARY_AUTH[@]}" --wait
   xcrun stapler staple "$APP"
   rm -f "$ZIP"
 fi
@@ -136,9 +144,9 @@ rm -rf "$STAGE"
 if [[ "$IDENTITY" != "-" ]]; then
   codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 fi
-if [[ -n "${NOTARY_PROFILE:-}" && "$IDENTITY" != "-" ]]; then
-  echo "▶ Notarization — DMG ($NOTARY_PROFILE)"
-  xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+if (( ${#NOTARY_AUTH} )) && [[ "$IDENTITY" != "-" ]]; then
+  echo "▶ Notarization — DMG"
+  xcrun notarytool submit "$DMG" "${NOTARY_AUTH[@]}" --wait
   xcrun stapler staple "$DMG"
   spctl -a -vv -t open --context context:primary-signature "$DMG" 2>&1 | sed -n '1p'
 fi

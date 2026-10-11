@@ -4,7 +4,6 @@
 # Firefox shares the code in Extension/ with Chrome and Safari; only the manifest differs:
 #   - background.scripts instead of background.service_worker (Firefox has no extension service workers)
 #   - browser_specific_settings.gecko (add-on id, minimum version, data collection declaration)
-#   - no nativeMessaging (only used by Safari to launch the app)
 #
 # Release Firefox only installs add-ons signed by Mozilla. With AMO API credentials the xpi is signed as an
 # unlisted (self-distributed) add-on, once per version (AMO rejects a version it has already signed).
@@ -28,7 +27,6 @@ import json, sys
 src, dst, gecko_id = sys.argv[1:]
 m = json.load(open(src))
 m["background"] = {"scripts": ["background.js"]}
-m["permissions"] = [p for p in m["permissions"] if p != "nativeMessaging"]
 m["browser_specific_settings"] = {"gecko": {
     "id": gecko_id,
     "strict_min_version": "140.0",

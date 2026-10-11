@@ -16,6 +16,9 @@ portta (`127.0.0.1:48213`) aynı API'yi konuşur. Yani tek eklenti iki uygulamay
 - **Video** — `<video>`, `.m3u8` ve `.mpd` akışları yakalanır; "Bu sayfadaki videoyu indir" gömülü
   yt-dlp'yi çalıştırır, gömülü ffmpeg ile birleştirir. yt-dlp Ayarlar'dan güncellenir; YouTube için
   gereken deno istek üzerine, sağlama toplamı doğrulanarak kurulur.
+- **İndirme gelince kendini açar** — macOS uygulamasının 1.3.0'ındaki gibi, uygulama kapalıyken eklenti onu
+  başlatır. Windows'ta tarayıcılar native messaging host olarak `MCDownloadManager.exe`'nin kendisini çağırır;
+  uygulama her açılışta kaydı `HKCU\Software\…\NativeMessagingHosts` altına yazar.
 - **Kalite sorusu** — video indirmesi başlamadan önce uygulama o videonun gerçekten sunduğu çözünürlükleri
   boyutlarıyla (X ve Instagram'da tahmin değil, ölçülmüş) ve yalnızca ses (MP3 / M4A) seçeneğini listeler.
   "Hep bunu kullan" seçimi kaydeder. Seçilen çözünürlük dosya adına girer (`Başlık [id] 720p.mp4`); böylece aynı

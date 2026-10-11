@@ -13,7 +13,7 @@
     <Description>MC Download Manager</Description>
     <Company>MC Download Manager contributors</Company>
     <Copyright>MIT License — Mesut Çevik and contributors</Copyright>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>

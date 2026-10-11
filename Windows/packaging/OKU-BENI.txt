@@ -17,6 +17,7 @@ Kullanım
 - Eklenti düğmesindeki "Bu sayfadaki videoyu indir" YouTube, X, Instagram ve benzeri sitelerden video
   indirir. İndirme başlamadan uygulama kaliteyi sorar (1080p, 720p, 360p... ya da yalnızca ses: MP3).
   İlk YouTube indirmesinde uygulama "deno" adlı yardımcıyı kurmayı önerir; kabul edin.
+- Uygulamadan çıkmış olsanız bile tarayıcıda bir indirme başlatınca eklenti uygulamayı kendisi açar.
 - Pencereyi kapatmak uygulamayı kapatmaz; saatin yanındaki bildirim alanında çalışmaya
   devam eder. Çıkmak için oradaki simgeye sağ tıklayıp "Çık" deyin.
 - İndirilenler: İndirilenler\MC Download Manager

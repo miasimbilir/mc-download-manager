@@ -120,7 +120,7 @@ public sealed class LocalServer(int port, Func<HttpRequest, Task<HttpResponse>> 
         {
             head.Append("Access-Control-Allow-Origin: ").Append(origin).Append("\r\n")
                 .Append("Vary: Origin\r\n")
-                .Append("Access-Control-Allow-Headers: Content-Type, X-MCDM-Extension\r\n")
+                .Append("Access-Control-Allow-Headers: Content-Type, X-MCDM-Extension, X-MCDM-Extension-Id\r\n")
                 .Append("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n")
                 // Chrome Private/Local Network Access preflights for loopback targets.
                 .Append("Access-Control-Allow-Private-Network: true\r\n")
@@ -223,6 +223,11 @@ public sealed class ServerController : INotifyPropertyChanged
         // Opera runs the Chrome extension, which introduces itself as "chrome"; only the User-Agent tells them apart.
         if (browser == "chrome" && req.Headers.TryGetValue("user-agent", out var agent) && agent.Contains(" OPR/", StringComparison.Ordinal))
             browser = "opera";
+        // A Chromium extension that reaches the bridge may also call the native host that starts the app.
+        req.Headers.TryGetValue("x-mcdm-extension-id", out var extensionId);
+        if (origin != null && origin.StartsWith("chrome-extension://", StringComparison.Ordinal))
+            extensionId = origin["chrome-extension://".Length..].Split('/')[0];
+        if (NativeHostRegistry.NoteExtensionId(settings, extensionId)) Task.Run(() => NativeHostRegistry.Register(settings));
         var first = !IsExtensionConnected(browser);
         extensionConnections[browser] = DateTime.UtcNow;
         if (first) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));

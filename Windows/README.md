@@ -16,6 +16,9 @@ API on the same port (`127.0.0.1:48213`), so one extension works with either app
 - **Video** — `<video>`, `.m3u8` and `.mpd` streams are captured; "Download video from this page" runs the
   bundled yt-dlp and merges with the bundled ffmpeg. yt-dlp can be updated from Settings, and deno
   (needed for YouTube) is installed on request with its checksum verified.
+- **Starts itself when a download arrives** — as in the macOS app from 1.3.0, the extension starts the app
+  when it is not running. On Windows the browsers call `MCDownloadManager.exe` itself as the native messaging
+  host; the app registers it under `HKCU\Software\…\NativeMessagingHosts` at every start.
 - **Quality question** — before a video download starts, the app lists the resolutions that video really
   offers with the size of each (measured, not guessed, for X and Instagram) plus audio only as MP3 or M4A.
   "Always use this" stores the choice. A picked resolution becomes part of the file name

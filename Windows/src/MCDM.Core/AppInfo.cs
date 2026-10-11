@@ -6,7 +6,7 @@ public static class AppInfo
 {
     public const string Name = "MC Download Manager";
     /// Kept in step with the macOS app and the extension manifest; the extension popup shows it.
-    public const string Version = "1.2.0";
+    public const string Version = "1.3.0";
     public const int DefaultPort = 48213;
 }
 

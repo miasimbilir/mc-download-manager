@@ -58,6 +58,8 @@ public partial class App : Application, IStoreUi
             Server.PropertyChanged += (_, _) => UpdateTray();
             Shell.RefreshStartupPath();
             ToolInstaller.CleanUp();
+            // Lets the browser extensions start the app when a download arrives while it is closed.
+            Task.Run(() => NativeHostRegistry.Register(Settings));
             if (Settings.OnboardingDone)
             {
                 Store.PrepareDownloadFolder();

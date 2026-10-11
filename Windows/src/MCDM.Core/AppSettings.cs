@@ -28,6 +28,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool startInTray = true;
     private bool denoPromptSuppressed;
     private bool askVideoQuality = true;
+    private List<string> chromiumExtensionIds = [];
 
     public int SegmentCount { get => segmentCount; set => Set(ref segmentCount, Math.Clamp(value, 1, 16)); }
     public int MaxConcurrent { get => maxConcurrent; set => Set(ref maxConcurrent, Math.Clamp(value, 1, 10)); }
@@ -53,6 +54,9 @@ public sealed class AppSettings : INotifyPropertyChanged
 
     /// Before a video download starts, list the resolutions the video offers and let the user pick one.
     public bool AskVideoQuality { get => askVideoQuality; set => Set(ref askVideoQuality, value); }
+
+    /// Ids of the Chromium extensions that have talked to the bridge; they may call the native host that starts the app.
+    public List<string> ChromiumExtensionIds { get => chromiumExtensionIds; set => Set(ref chromiumExtensionIds, value ?? []); }
 
     /// All file extensions (lowercase, no dot) the app should capture.
     [JsonIgnore] public List<string> CaptureExtensions => CaptureTypes.Extensions(captureGroupIds, customExtensions);

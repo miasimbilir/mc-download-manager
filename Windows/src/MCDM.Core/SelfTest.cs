@@ -150,6 +150,7 @@ public static class SelfTest
         Info("Browsers", () => string.Join(", ", BrowserKind.All.Select(b => $"{b.Name}: {b.ExecutablePath ?? "not found"}")));
         Info("Extension files", () => File.Exists(Path.Combine(BrowserIntegration.BundledExtensionFolder, "manifest.json"))
             ? $"{BrowserIntegration.BundledExtensionFolder} (v{BrowserIntegration.BundledVersion})" : $"MISSING at {BrowserIntegration.BundledExtensionFolder}");
+        Info("Native messaging host", NativeHostRegistry.Describe);
         Info("Firefox add-on", () => BrowserIntegration.FirefoxAddon ?? "not included (FirefoxExtension.xpi next to the executable)");
 
         foreach (var (tool, path) in new[] { ("yt-dlp", VideoDownloader.LocateYtDlp("")), ("ffmpeg", VideoDownloader.LocateFfmpeg()), ("deno", VideoDownloader.LocateDeno()) })

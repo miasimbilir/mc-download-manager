@@ -17,6 +17,7 @@ Use
 - "Download video from this page" in the extension popup downloads from YouTube, X, Instagram and
   similar sites. Before it starts, the app asks for the quality (1080p, 720p, 360p… or audio only: MP3).
   On the first YouTube download the app offers to install a helper called "deno"; accept it.
+- Even after you quit the app, starting a download in the browser makes the extension open it again.
 - Closing the window does not quit; the app stays in the notification area next to the clock.
   Right-click its icon and choose "Quit" to exit.
 - Files go to: Downloads\MC Download Manager

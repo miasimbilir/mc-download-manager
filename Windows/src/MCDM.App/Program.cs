@@ -12,6 +12,9 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // Started by a browser as its native messaging host: answer and leave, no window, no bridge.
+        if (NativeHost.IsHostInvocation(args)) return NativeHost.Run();
+
         if (args.Contains("--selftest")) return SelfTest.Run(args.SkipWhile(a => a != "--selftest").Skip(1).FirstOrDefault());
 
         StartedInBackground = args.Contains(Shell.BackgroundArgument);

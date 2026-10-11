@@ -17,9 +17,12 @@ internal static class Program
 
         if (args.Contains("--selftest")) return SelfTest.Run(args.SkipWhile(a => a != "--selftest").Skip(1).FirstOrDefault());
 
+        // The installer and the uninstaller run this before they touch the files.
+        if (args.Contains("--quit")) return SingleInstance.Quit() ? 0 : 1;
+
         StartedInBackground = args.Contains(Shell.BackgroundArgument);
         // One instance per user: a second launch asks the running one to show its window.
-        using var mutex = new Mutex(true, "MCDownloadManager.SingleInstance." + Environment.UserName, out var first);
+        using var mutex = new Mutex(true, SingleInstance.MutexName, out var first);
         if (!first)
         {
             SingleInstance.Signal(StartedInBackground ? "noop" : "show");
@@ -59,7 +62,31 @@ internal static class CrashLog
 
 internal static class SingleInstance
 {
+    public static string MutexName => "MCDownloadManager.SingleInstance." + Environment.UserName;
     private static string PipeName => "MCDownloadManager." + Environment.UserName;
+
+    /// `--quit`: asks the running instance to exit the way "Quit" in the tray menu does (downloads paused,
+    /// list saved, tray icon removed) and waits until it has. True when no instance is left.
+    public static bool Quit(int timeoutMs = 15000)
+    {
+        if (!Mutex.TryOpenExisting(MutexName, out var running)) return true;
+        running.Dispose();
+        // Wait for the process, not for the mutex: the mutex goes when the main thread ends, a moment
+        // before the process does, and until then the executable cannot be replaced or deleted.
+        using var self = System.Diagnostics.Process.GetCurrentProcess();
+        var others = System.Diagnostics.Process.GetProcessesByName(self.ProcessName)
+            .Where(p => p.Id != self.Id && p.SessionId == self.SessionId).ToList();
+        Signal("quit");
+        var deadline = Environment.TickCount64 + timeoutMs;
+        var gone = true;
+        foreach (var p in others)
+        {
+            try { if (!p.WaitForExit((int)Math.Max(1, deadline - Environment.TickCount64))) gone = false; }
+            catch { }
+            finally { p.Dispose(); }
+        }
+        return gone;
+    }
 
     public static void Signal(string message)
     {

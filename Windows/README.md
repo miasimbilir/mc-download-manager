@@ -44,7 +44,12 @@ zero-filling the gaps first.
 
 ## Install
 
-Unzip `MC-Download-Manager-<version>-win-x64.zip`, move the folder somewhere permanent and run
+**Installer:** run `MC-Download-Manager-<version>-Setup.exe`. It needs no administrator rights, installs into
+`%LOCALAPPDATA%\Programs\MC Download Manager`, adds a Start menu entry and can be removed from Settings ▸ Apps
+(settings and the download list are kept unless you say otherwise). It also upgrades a copy unpacked from the zip.
+Silent install: `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
+
+**Zip:** unzip `MC-Download-Manager-<version>-win-x64.zip`, move the folder somewhere permanent and run
 `MCDownloadManager.exe`. The build is not code-signed, so SmartScreen asks once ("More info" ▸ "Run
 anyway"). Nothing else needs to be installed: the .NET runtime is inside the executable.
 
@@ -59,6 +64,8 @@ Needs the .NET 10 SDK. The app is cross-compiled; macOS, Linux and Windows all w
 Windows/scripts/fetch-tools.sh   # yt-dlp.exe and ffmpeg.exe into Windows/Tools/ (checksums verified)
 Windows/scripts/build.sh         # → Windows/build/MC-Download-Manager-<version>-win-x64.zip
 # on Windows: powershell -ExecutionPolicy Bypass -File Windows\scripts\build.ps1
+#   with Inno Setup 6 installed (winget install JRSoftware.InnoSetup) it also builds the installer: …-Setup.exe
+#   (Windows\packaging\installer.iss; winget draft in Windows\packaging\winget\)
 dotnet test Windows/tests/MCDM.Tests
 ```
 

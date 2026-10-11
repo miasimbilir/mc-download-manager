@@ -44,7 +44,12 @@ NTFS aradaki boşlukları önce sıfırla doldurmaz.
 
 ## Kurulum
 
-`MC-Download-Manager-<sürüm>-win-x64.zip` dosyasını açın, klasörü kalıcı bir yere taşıyın ve
+**Kurucu:** `MC-Download-Manager-<sürüm>-Setup.exe` dosyasını çalıştırın. Yönetici izni istemez; uygulamayı
+`%LOCALAPPDATA%\Programs\MC Download Manager` altına kurar, Başlat menüsüne ekler ve Ayarlar ▸ Uygulamalar'dan
+kaldırılabilir (ayarlar ve liste sorulmadan silinmez). Zip'ten kurulmuş bir kopyanın üzerine de kurulur. Sessiz kurulum:
+`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
+
+**Zip:** `MC-Download-Manager-<sürüm>-win-x64.zip` dosyasını açın, klasörü kalıcı bir yere taşıyın ve
 `MCDownloadManager.exe`'yi çalıştırın. Derleme imzalı olmadığı için SmartScreen bir kez sorar
 ("Ek bilgi" ▸ "Yine de çalıştır"). Başka bir şey kurmak gerekmez; .NET çalışma ortamı exe'nin içindedir.
 
@@ -60,6 +65,8 @@ köprü portu, kayıt defteri, gömülü araçlar) sınar ve sonucu
 Windows/scripts/fetch-tools.sh   # yt-dlp.exe ve ffmpeg.exe → Windows/Tools/ (sağlama toplamları doğrulanır)
 Windows/scripts/build.sh         # → Windows/build/MC-Download-Manager-<sürüm>-win-x64.zip
 # Windows'ta: powershell -ExecutionPolicy Bypass -File Windows\scripts\build.ps1
+#   Inno Setup 6 kuruluysa (winget install JRSoftware.InnoSetup) kurucuyu da üretir: …-Setup.exe
+#   (Windows\packaging\installer.iss; winget taslağı Windows\packaging\winget\)
 dotnet test Windows/tests/MCDM.Tests
 ```
 

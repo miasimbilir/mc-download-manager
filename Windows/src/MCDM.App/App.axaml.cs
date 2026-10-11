@@ -75,6 +75,7 @@ public partial class App : Application, IStoreUi
             SingleInstance.Listen(message =>
             {
                 if (message == "show") Dispatcher.UIThread.Post(ShowMainWindow);
+                else if (message == "quit") Dispatcher.UIThread.Post(Quit);
             });
             // A copy without its tools folder cannot download or merge video; say so instead of failing later.
             if (OperatingSystem.IsWindows() && !Shell.CompleteCopy

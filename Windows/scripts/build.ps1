@@ -56,3 +56,17 @@ finally {
     $stream.Dispose()
 }
 Write-Host "OK $zip"
+
+# Installer (optional): needs Inno Setup 6 (winget install JRSoftware.InnoSetup). Skipped when ISCC.exe is not found.
+$iscc = @(
+    (Get-Command iscc.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+    (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if ($iscc) {
+    & $iscc /Qp "/DAppVersion=$version" "/DStage=$stage" "/DOut=$out" (Join-Path $win 'packaging\installer.iss')
+    if ($LASTEXITCODE -ne 0) { throw 'ISCC failed' }
+    Write-Host "OK $(Join-Path $out "MC-Download-Manager-$version-Setup.exe")"
+} else {
+    Write-Host 'Inno Setup not found - no installer built'
+}

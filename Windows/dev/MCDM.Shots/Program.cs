@@ -12,6 +12,9 @@ var lang = args.Length > 1 ? args[1] : "tr";
 Directory.CreateDirectory(outDir);
 var data = Path.Combine(Path.GetTempPath(), "mcdm-shots-" + Guid.NewGuid().ToString("N")[..6]);
 Environment.SetEnvironmentVariable("MCDM_DATA_DIR", data);
+// Not the default port: with the app itself running, the status bar would show "address already in use".
+Directory.CreateDirectory(data);
+File.WriteAllText(Path.Combine(data, "settings.json"), "{\"ServerPort\":48557}");
 Environment.SetEnvironmentVariable("MCDM_DOWNLOADS_DIR", @"C:\Users\Kullanıcı\Downloads");
 Environment.SetEnvironmentVariable("MCDM_LANG", lang);
 var culture = Environment.GetEnvironmentVariable("SHOTS_CULTURE") ?? (lang == "tr" ? "tr-TR" : "en-US");

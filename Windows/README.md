@@ -6,6 +6,9 @@ extension, rebuilt on .NET 10 and [Avalonia](https://avaloniaui.net). [Türkçe]
 The Chrome extension in [`../Extension`](../Extension) is used unchanged, and the bridge speaks the same
 API on the same port (`127.0.0.1:48213`), so one extension works with either app.
 
+Up to 1.3.0 the version number followed the macOS app. **From 2.0 on the Windows app has its own**: what is
+listed under "New in 2.0" below exists on Windows only. The extension and the bridge are unchanged.
+
 ## What it does
 
 - **Segmented downloads** — up to 16 parallel HTTP `Range` connections per file (8 by default), a single
@@ -28,6 +31,30 @@ API on the same port (`127.0.0.1:48213`), so one extension works with either app
 - **Lives in the notification area** — the bridge stays up when the window is closed; optional start at
   sign-in. English and Turkish, following the system language.
 
+### New in 2.0
+
+- **Asks before it downloads** — a file handed over by the browser is shown first, with its name, size and
+  where it will be saved: "Download", "Download Later" or "Cancel". Name and folder can be changed for that
+  download, and when the name is taken the window says what the file will be called instead. Can be switched
+  off in Settings ▸ General.
+- **Does not fetch the same thing twice** — something that was already downloaded and is still on disk is
+  asked about (Open / Show in Folder / Download Again); a download that is under way is not added a second
+  time, and a failed one is retried with the cookies the browser sends now.
+- **Speed limit** — one limit in KB/s for all downloads together, switched with one click from the tray icon
+  or the status bar.
+- **When the queue is done** — puts the computer to sleep or shuts it down after the last download, behind a
+  30-second countdown that can be called off. A one-off choice.
+- **Playlists and subtitles** — a whole YouTube playlist goes into a folder named after it, numbered in the
+  order of the list; a video that is no longer available does not stop the rest. Subtitles are saved next to
+  the video as `.srt` files.
+- **Updates itself** — checks this repository's releases once a day. A copy installed with the installer
+  downloads the new Setup.exe, verifies it against the SHA-256 GitHub publishes and installs it; a copy
+  unpacked from the zip opens the download page.
+- **Start a waiting download right away** — the button in the window of a queued item now says "Download".
+- **Old-extension warning** — when a browser still runs an earlier version of the extension,
+  Settings ▸ Browser Extensions says so; after an app update the prepared extension folders are brought up to
+  date automatically. A busy bridge port is retried until it is free.
+
 ## Differences from the macOS app
 
 | macOS | Windows |
@@ -35,7 +62,7 @@ API on the same port (`127.0.0.1:48213`), so one extension works with either app
 | Safari extension | not applicable; Edge is supported in its place |
 | Firefox add-on with one-click install (1.2.0) | the same signed add-on (`FirefoxExtension.xpi`, taken from the macOS release) ships next to the exe; "Add to Firefox" in the wizard |
 | In-app sign-in window for age-restricted videos | import a `cookies.txt` export in Settings ▸ Video |
-| Update check against GitHub Releases | not included yet (yt-dlp/deno updates are) |
+| Update check against GitHub Releases | included (2.0): looks at this repository's `windows-v…` releases and runs the installer itself |
 | Quarantine attribute on finished files | Mark of the Web (`Zone.Identifier`), so SmartScreen checks them |
 | Menu bar item, login item | notification-area icon, `HKCU\…\Run` entry |
 
@@ -73,7 +100,7 @@ dotnet test Windows/tests/MCDM.Tests
 |---|---|
 | `src/MCDM.Core` | engine without UI: segmented downloader, store and queue, yt-dlp wrapper, bridge, tool installer |
 | `src/MCDM.App` | Avalonia UI: main window, per-download window, settings, setup wizard, tray icon |
-| `tests/MCDM.Tests` | engine tests against a local origin server (ranges, rate limits, cut connections, redirects) |
+| `tests/MCDM.Tests` | engine tests against a local origin server (ranges, server throttling, cut connections, redirects, the download question, the speed limit, playlists, updates) |
 | `dev/MCDM.Shots` | renders every window off-screen to PNG, for checking layout without a Windows machine |
 | `scripts/extract-strings.py` | regenerates `Strings.tr.json` from the macOS string catalog |
 

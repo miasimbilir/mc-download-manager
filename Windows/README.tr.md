@@ -6,6 +6,9 @@ aynı eklenti; .NET 10 ve [Avalonia](https://avaloniaui.net) ile yeniden yazıld
 [`../Extension`](../Extension) klasöründeki Chrome eklentisi değiştirilmeden kullanılır; köprü aynı
 portta (`127.0.0.1:48213`) aynı API'yi konuşur. Yani tek eklenti iki uygulamayla da çalışır.
 
+Sürüm numarası 1.3.0'a kadar macOS uygulamasını izledi. **2.0'dan itibaren Windows uygulamasının kendi
+numarası var**: aşağıda "2.0 ile gelenler" başlığındaki özellikler yalnızca Windows'ta. Eklenti ve köprü aynı kaldı.
+
 ## Özellikler
 
 - **Çok parçalı indirme** — dosya başına 16'ya kadar paralel HTTP `Range` bağlantısı (varsayılan 8);
@@ -28,6 +31,27 @@ portta (`127.0.0.1:48213`) aynı API'yi konuşur. Yani tek eklenti iki uygulamay
 - **Bildirim alanında yaşar** — pencere kapansa da köprü açık kalır; istenirse oturum açılışında başlar.
   Arayüz sistem dilini izler: Türkçe ve İngilizce.
 
+### 2.0 ile gelenler
+
+- **İndirmeden önce sorar** — tarayıcıdan gelen dosya için adı, boyutu ve kayıt yerini gösteren bir pencere açılır:
+  "İndir", "Sonra İndir" ya da "İptal". Ad ve klasör o indirme için değiştirilebilir; aynı adda dosya varsa hangi adla
+  kaydedileceği yazar. Ayarlar ▸ Genel'den kapatılabilir.
+- **Aynı dosyayı iki kez indirmez** — daha önce inmiş ve yerinde duran bir dosya yeniden istenirse sorar
+  (Aç / Klasörde Göster / Yeniden İndir); sürmekte olan bir indirme ikinci kez eklenmez, yarıda kalmış olan
+  tarayıcının yeni gönderdiği çerezlerle sürdürülür.
+- **Hız sınırı** — tüm indirmelerin toplamı için KB/sn cinsinden sınır; bildirim alanı simgesinden ve durum
+  çubuğundan tek tıkla açılıp kapanır.
+- **Kuyruk bitince** — son indirme de bitince bilgisayarı uyutur ya da kapatır; önce 30 saniyelik, vazgeçilebilir
+  bir geri sayım gösterir. Bir kerelik bir seçimdir.
+- **Oynatma listesi ve altyazı** — bir YouTube oynatma listesinin tamamı, listenin adını taşıyan klasöre sıra
+  numarasıyla iner; listedeki bir video artık yoksa gerisi yine iner. Altyazılar videonun yanına `.srt` olarak kaydedilir.
+- **Kendini günceller** — bu deponun Releases sayfasını günde bir kez denetler. Kurucuyla kurulmuş kopya yeni
+  kurucuyu indirir, GitHub'ın yayınladığı SHA-256 ile doğrular ve kurar; zip kopyası indirme sayfasını açar.
+- **Bekleyen indirmeyi hemen başlatma** — sırada bekleyen bir öğenin penceresindeki düğme artık "İndir".
+- **Eski eklenti uyarısı** — tarayıcıda eklentinin eski sürümü yüklü kalmışsa Ayarlar ▸ Tarayıcı Eklentileri bunu
+  söyler; uygulama güncellenince hazırlanmış eklenti klasörlerini kendisi yeniler. Köprü portu doluysa boşalana kadar
+  yeniden dener.
+
 ## macOS sürümünden farklar
 
 | macOS | Windows |
@@ -35,7 +59,7 @@ portta (`127.0.0.1:48213`) aynı API'yi konuşur. Yani tek eklenti iki uygulamay
 | Safari eklentisi | yok; yerine Edge destekleniyor |
 | Tek tıkla kurulan Firefox eklentisi (1.2.0) | aynı imzalı eklenti (`FirefoxExtension.xpi`, macOS yayınından alınır) exe'nin yanında gelir; sihirbazda "Firefox'a Ekle" |
 | Yaş doğrulamalı videolar için uygulama içi giriş penceresi | Ayarlar ▸ Video'dan `cookies.txt` içe aktarma |
-| GitHub Releases üzerinden güncelleme denetimi | henüz yok (yt-dlp/deno güncellemesi var) |
+| GitHub Releases üzerinden güncelleme denetimi | var (2.0); bu deponun `windows-v…` sürümlerine bakar, kurucuyu kendisi çalıştırır |
 | Biten dosyalara karantina özniteliği | Mark of the Web (`Zone.Identifier`); SmartScreen denetler |
 | Menü çubuğu simgesi, oturum açma öğesi | bildirim alanı simgesi, `HKCU\…\Run` kaydı |
 
@@ -74,7 +98,7 @@ dotnet test Windows/tests/MCDM.Tests
 |---|---|
 | `src/MCDM.Core` | arayüzsüz motor: çok parçalı indirici, kuyruk, yt-dlp sarmalayıcısı, köprü, araç kurucu |
 | `src/MCDM.App` | Avalonia arayüzü: ana pencere, dosya penceresi, ayarlar, kurulum sihirbazı, bildirim alanı |
-| `tests/MCDM.Tests` | yerel bir sunucuya karşı motor testleri (aralıklar, hız sınırı, kopan bağlantı, yönlendirme) |
+| `tests/MCDM.Tests` | yerel bir sunucuya karşı motor testleri (aralıklar, sunucu sınırlaması, kopan bağlantı, yönlendirme, indirme sorusu, hız sınırı, oynatma listesi, güncelleme) |
 | `dev/MCDM.Shots` | her pencereyi ekran dışında PNG'ye çizer; Windows makinesi olmadan yerleşim denetimi için |
 | `scripts/extract-strings.py` | `Strings.tr.json` dosyasını macOS dize kataloğundan yeniden üretir |
 

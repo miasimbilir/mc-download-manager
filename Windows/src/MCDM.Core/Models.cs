@@ -61,11 +61,28 @@ public sealed class DownloadItem : INotifyPropertyChanged
     public List<string>? FormatArgs { get; set; }
     /// Quality picked in the question ("720p"); becomes part of the file name.
     public string? QualityTag { get; set; }
+    /// `Directory` was picked for this download: the file goes straight into it, no category subfolder.
+    public bool ExactDirectory { get; set; }
+    /// The name was typed by the user: whatever the server suggests does not replace it.
+    public bool NameLocked { get; set; }
+    /// A whole playlist: yt-dlp writes one file per video into a folder named after the list.
+    public bool Playlist { get; set; }
+    /// Subtitles for this video; null = as in Settings.
+    public bool? Subtitles { get; set; }
+    /// Shown after "Completed" when the result needs a remark (a playlist with videos that could not be fetched).
+    public string? Note { get; set; }
+    /// yt-dlp: the file being written right now (a playlist moves on from one to the next). Kept so that
+    /// cancelling after a restart still finds the part files.
+    public string? WorkingPath { get; set; }
 
     // Not persisted
     [JsonIgnore] public double Speed { get; set; }
     [JsonIgnore] public string Log { get; set; } = "";
     [JsonIgnore] public string Stage { get; set; } = "";     // yt-dlp: current phase (downloading video/audio, merging…)
+    /// Waiting for the user's answer to "download this file?".
+    [JsonIgnore] public bool AwaitingConfirmation { get; set; }
+    /// The server has been asked about the file (or could not be): an unknown size is final, not pending.
+    [JsonIgnore] public bool Probed { get; set; }
 
     [JsonIgnore] public Uri Uri => new(Url);
     [JsonIgnore] public string? Host { get { try { return Uri.Host; } catch { return null; } } }
@@ -99,8 +116,8 @@ public sealed class DownloadItem : INotifyPropertyChanged
         {
             switch (State)
             {
-                case DownloadState.completed: return Loc.T("Completed");
-                case DownloadState.queued: return Loc.T("Added");
+                case DownloadState.completed: return string.IsNullOrEmpty(Note) ? Loc.T("Completed") : Loc.T("Completed") + " — " + Note;
+                case DownloadState.queued: return AwaitingConfirmation ? Loc.T("Waiting for your answer…") : Loc.T("Added");
                 case DownloadState.failed: return Loc.T("Error: {0}", ErrorMessage ?? "");
                 case DownloadState.cancelled: return Loc.T("Cancelled");
                 default:
@@ -252,6 +269,9 @@ public static class FileNames
         if (reserved.Contains(stemOnly)) n = "_" + n;
         return n.Length == 0 ? "download" : n;
     }
+
+    /// A file or a folder (a finished playlist is a folder).
+    public static bool Exists(string? path) => !string.IsNullOrEmpty(path) && (File.Exists(path) || System.IO.Directory.Exists(path));
 
     public static string UniqueDestination(string path)
     {

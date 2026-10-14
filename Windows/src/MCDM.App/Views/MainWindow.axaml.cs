@@ -99,7 +99,23 @@ public partial class MainWindow : Window
         AddHandler(DragDrop.DragOverEvent, (_, e) => e.DragEffects = DragDropEffects.Copy);
         AddHandler(DragDrop.DropEvent, OnDrop);
 
+        LimitButton.Click += (_, _) => app.Settings.SpeedLimitEnabled = !app.Settings.SpeedLimitEnabled;
+        var whenDone = new MenuFlyout();
+        foreach (var action in App.WhenDoneOptions)
+        {
+            var choice = new MenuItem { Header = App.WhenDoneLabel(action), ToggleType = MenuItemToggleType.Radio };
+            choice.Click += (_, _) => store.WhenDone = action;
+            whenDone.Items.Add(choice);
+        }
+        whenDone.Opening += (_, _) =>
+        {
+            for (int i = 0; i < whenDone.Items.Count; i++)
+                if (whenDone.Items[i] is MenuItem m) m.IsChecked = App.WhenDoneOptions[i] == store.WhenDone;
+        };
+        WhenDoneButton.Flyout = whenDone;
+
         store.Changed += OnStoreChanged;
+        app.Settings.PropertyChanged += (_, _) => UpdateStatusBar();
         app.Server.PropertyChanged += (_, _) => UpdateStatusBar();
         Closing += (_, e) =>
         {
@@ -177,7 +193,18 @@ public partial class MainWindow : Window
         BridgeText.Text = running ? Loc.T("Browser bridge is running") : app.Server.StatusText;
         UnfinishedText.Text = store.UnfinishedCount.ToString();
         SpeedText.Text = Fmt.Speed(store.TotalSpeed);
+        LimitButton.Content = app.SpeedLimitLabel;
+        WhenDoneButton.Content = app.WhenDoneSummary;
+        // Something that is switched on stands out; the usual state stays as quiet as the rest of the bar.
+        var state = (app.Settings.SpeedLimitEnabled, store.WhenDone != QueueEndAction.None);
+        if (state == highlighted) return;
+        highlighted = state;
+        static Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension Brush(bool on) => new(on ? "AccentBrush" : "SecondaryTextBrush");
+        LimitButton[!ForegroundProperty] = Brush(state.Item1);
+        WhenDoneButton[!ForegroundProperty] = Brush(state.Item2);
     }
+
+    private (bool Limit, bool WhenDone)? highlighted;
 
     // ---- Dialogs ----
 
@@ -266,6 +293,8 @@ public partial class MainWindow : Window
         {
             list.Add(Item(Loc.T("Open Download Window"), () => { foreach (var i in items) app.ShowDetail(i.Id); }));
             list.Add(new Separator());
+            if (items.Any(i => i.State == DownloadState.queued))
+                list.Add(Item(Loc.T("Download Now"), () => { foreach (var i in items.Where(i => i.State == DownloadState.queued)) store.StartNow(i.Id); }));
             if (items.Any(i => i.State.IsActive() || i.State == DownloadState.queued))
             {
                 list.Add(Item(Loc.T("Pause"), () => { foreach (var i in items) store.Pause(i.Id); }));

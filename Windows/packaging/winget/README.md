@@ -14,6 +14,8 @@ Before submitting to `microsoft/winget-pkgs` (folder `manifests/m/miasimbilir/MC
    `installer.iss`, taken from `MCDM.App.csproj`).
 5. Check with `winget validate --manifest <folder>` and, on a test machine,
    `winget install --manifest <folder>` (needs `winget settings --enable LocalManifestFiles` as administrator).
+   `<folder>` must hold the three `.yaml` files only: winget reads every file in it, and this README makes the
+   check fail ("could not find expected ':'").
 
 `ProductCode` is Inno Setup's uninstall key for the fixed `AppId` in `installer.iss`; it is how winget matches an
 installed copy (`winget list` shows it as `ARP\User\X64\{B6F3A2C4-...}_is1`) with this package for upgrades.

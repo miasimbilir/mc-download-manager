@@ -221,9 +221,15 @@ public static class NativeHostRegistry
     {
         id = id?.ToLowerInvariant();
         if (id == null || !IsValidChromiumId(id) || settings.ChromiumExtensionIds.Contains(id)) return false;
-        settings.ChromiumExtensionIds = [.. settings.ChromiumExtensionIds.Append(id).Order(StringComparer.Ordinal)];
+        // Newest last. The list is fed by a header any local program can send, so it is kept short:
+        // beyond the limit the oldest entries go (the wizard's own folders are always allowed anyway).
+        var ids = settings.ChromiumExtensionIds.Append(id).ToList();
+        if (ids.Count > MaxRememberedIds) ids.RemoveRange(0, ids.Count - MaxRememberedIds);
+        settings.ChromiumExtensionIds = ids;
         return true;
     }
+
+    public const int MaxRememberedIds = 32;
 
     public static string BuildManifest(string hostProgram, bool firefox, IEnumerable<string> chromiumIds)
     {

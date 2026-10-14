@@ -25,8 +25,14 @@ public partial class App : Application, IStoreUi
     private SettingsWindow? settingsWindow;
     private WizardWindow? wizard;
     private TrayIcon? tray;
-    private NativeMenuItem? trayStatus, trayBridge;
+    private NativeMenuItem? trayStatus, trayBridge, trayLimit, trayWhenDone;
+    private readonly List<(QueueEndAction Action, NativeMenuItem Item)> trayWhenDoneItems = [];
     private readonly Dictionary<Guid, DetailWindow> details = [];
+    private DispatcherTimer? updateTimer;
+
+    /// What the last update check found (null = nothing newer, or not checked yet). Settings shows it.
+    public UpdateInfo? AvailableUpdate { get; private set; }
+    public event Action? UpdateStateChanged;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -56,10 +62,14 @@ public partial class App : Application, IStoreUi
             SetupTray();
             Store.Changed += UpdateTray;
             Server.PropertyChanged += (_, _) => UpdateTray();
+            Settings.PropertyChanged += (_, _) => UpdateTray();
             Shell.RefreshStartupPath();
             ToolInstaller.CleanUp();
+            Updater.CleanUp();
             // Lets the browser extensions start the app when a download arrives while it is closed.
             Task.Run(() => NativeHostRegistry.Register(Settings));
+            // After an app update: bring the folders the browsers load the extension from up to date.
+            Task.Run(BrowserIntegration.RefreshPreparedFiles);
             if (Settings.OnboardingDone)
             {
                 Store.PrepareDownloadFolder();
@@ -84,8 +94,46 @@ public partial class App : Application, IStoreUi
                     Loc.T("This copy of the app is incomplete"),
                     Loc.T("The copy in {0} has no “tools” folder next to it, so video downloads will not work. Start the app from the folder it was unpacked into, or from MC Download Manager in the Start menu.", AppPaths.AppDir.TrimEnd(Path.DirectorySeparatorChar)),
                     [Loc.T("Close")]), DispatcherPriority.Background);
+            // A little after start, then a few times a day; CheckForUpdatesAsync itself keeps it to once a day.
+            updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+            updateTimer.Tick += (_, _) =>
+            {
+                updateTimer.Interval = TimeSpan.FromHours(6);
+                if (Settings.CheckForUpdates && (DateTime.UtcNow - Settings.LastUpdateCheck).TotalHours >= 20) _ = CheckForUpdatesAsync(manual: false);
+            };
+            updateTimer.Start();
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // ---- Updates ----
+
+    private bool checkingUpdates;
+
+    /// Looks for a newer release. Found one: the update window opens (an automatic check stays quiet about
+    /// a version the user chose to skip). Returns a line for the Settings window.
+    public async Task<string> CheckForUpdatesAsync(bool manual)
+    {
+        if (checkingUpdates) return Loc.T("Checking…");
+        checkingUpdates = true;
+        try
+        {
+            var found = await Updater.CheckAsync();
+            Settings.LastUpdateCheck = DateTime.UtcNow;
+            AvailableUpdate = found;
+            UpdateStateChanged?.Invoke();
+            if (found == null) return Loc.T("You're up to date");
+            if (manual || found.Version != Settings.SkippedVersion) UpdateWindow.Show(this, found);
+            return Loc.T("Version {0} is available", found.Version);
+        }
+        catch (Exception e)
+        {
+            return Loc.T("Could not check for updates") + ": " + e.Message;
+        }
+        finally
+        {
+            checkingUpdates = false;
+        }
     }
 
     // ---- Windows ----
@@ -173,7 +221,43 @@ public partial class App : Application, IStoreUi
     }
 
     public Task<VideoFormatAnswer?> AskVideoFormatAsync(DownloadItem item, VideoInfo info) =>
-        Headless ? Task.FromResult<VideoFormatAnswer?>(VideoFormatAnswer.Default) : VideoFormatWindow.Ask(Settings, item, info);
+        Headless ? Task.FromResult<VideoFormatAnswer?>(VideoFormatAnswer.Default) : VideoFormatWindow.Ask(Store, item, info);
+
+    public Task<DownloadAnswer> AskDownloadAsync(DownloadItem item) =>
+        Headless ? Task.FromResult(DownloadAnswer.Start) : DownloadAskWindow.Ask(this, item);
+
+    public async Task<DuplicateDecision> AskDuplicateAsync(DownloadItem existing)
+    {
+        if (Headless) return DuplicateDecision.DownloadAgain;
+        var when = existing.CompletedAt is { } d ? Fmt.DateTimeShort(d) : "";
+        var (button, _) = await PromptWindow.Ask(null,
+            Loc.T("This file was already downloaded"),
+            existing.FileName + "\n" + (existing.FinalPath ?? "") + (when.Length > 0 ? "\n" + Loc.T("Downloaded: {0}", when) : ""),
+            [Loc.T("Open"), Loc.T("Show in Folder"), Loc.T("Download Again"), Loc.T("Cancel")], cancelIndex: 3);
+        return button switch
+        {
+            0 => DuplicateDecision.Open,
+            1 => DuplicateDecision.Reveal,
+            2 => DuplicateDecision.DownloadAgain,
+            _ => DuplicateDecision.Cancel,
+        };
+    }
+
+    public async void QueueFinished(QueueEndAction action)
+    {
+        if (Headless || action == QueueEndAction.None) return;
+        try
+        {
+            if (!await CountdownWindow.Ask(action)) return;
+            // Something was started during the countdown: wait for that to end as well.
+            if (Store.Items.Any(i => i.State.IsActive() || i.State == DownloadState.queued)) { Store.WhenDone = action; return; }
+            // Sleep returns only when the computer is awake again: keep it off the UI thread.
+            var done = await Task.Run(() => action == QueueEndAction.Shutdown ? Shell.Shutdown() : Shell.Sleep());
+            if (!done) ToastWindow.Show(this, AppInfo.Name, action == QueueEndAction.Shutdown
+                ? Loc.T("Windows did not let the app shut the computer down.") : Loc.T("Windows did not let the app put the computer to sleep."));
+        }
+        catch (Exception e) { CrashLog.Write(e); }
+    }
 
     // ---- Notification area ----
 
@@ -190,6 +274,19 @@ public partial class App : Application, IStoreUi
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(Item(Loc.T("Pause All"), () => Store.PauseAll()));
         menu.Add(Item(Loc.T("Resume All"), () => Store.ResumeAll()));
+        menu.Add(new NativeMenuItemSeparator());
+        // Both say their state in their text ("Speed limit: off", "✓ Shut down the computer"): how a
+        // check mark is drawn in this menu differs from one Windows version to the next.
+        trayLimit = Item("", () => Settings.SpeedLimitEnabled = !Settings.SpeedLimitEnabled);
+        menu.Add(trayLimit);
+        trayWhenDone = new NativeMenuItem { Menu = [] };
+        foreach (var action in WhenDoneOptions)
+        {
+            var choice = Item(WhenDoneLabel(action), () => Store.WhenDone = action);
+            trayWhenDoneItems.Add((action, choice));
+            trayWhenDone.Menu.Add(choice);
+        }
+        menu.Add(trayWhenDone);
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(Item(Loc.T("Open Download Folder"), () => Shell.OpenFolder(Settings.DownloadDirectory)));
         menu.Add(Item(Loc.T("Settings…"), () => ShowSettings()));
@@ -209,6 +306,22 @@ public partial class App : Application, IStoreUi
         }
     }
 
+    public static readonly QueueEndAction[] WhenDoneOptions = [QueueEndAction.None, QueueEndAction.Sleep, QueueEndAction.Shutdown];
+
+    public static string WhenDoneLabel(QueueEndAction action) => action switch
+    {
+        QueueEndAction.Sleep => Loc.T("Put the computer to sleep"),
+        QueueEndAction.Shutdown => Loc.T("Shut down the computer"),
+        _ => Loc.T("Do nothing"),
+    };
+
+    /// "Speed limit: 1,00 MB/s" / "Speed limit: off" — for the tray menu and the status bar.
+    public string SpeedLimitLabel => Settings.SpeedLimitEnabled
+        ? Loc.T("Speed limit: {0}", Fmt.Speed(Settings.SpeedLimitBytes))
+        : Loc.T("Speed limit: off");
+
+    public string WhenDoneSummary => Loc.T("When done: {0}", WhenDoneLabel(Store.WhenDone));
+
     private string? lastTooltip;
 
     private void UpdateTray()
@@ -222,11 +335,19 @@ public partial class App : Application, IStoreUi
             tip += "\n" + status;
             if (Store.OverallProgress is { } p) tip += $" · {(int)(p * 100)}%";
         }
+        // Each header only when it changes: the menu is rebuilt by the system on every assignment.
+        static void Set(NativeMenuItem? item, string header)
+        {
+            if (item != null && item.Header != header) item.Header = header;
+        }
+        Set(trayLimit, SpeedLimitLabel);
+        Set(trayWhenDone, WhenDoneSummary);
+        foreach (var (action, item) in trayWhenDoneItems) Set(item, (Store.WhenDone == action ? "✓ " : "") + WhenDoneLabel(action));
+        Set(trayBridge, Server.Running ? Loc.T("Bridge is running") : Loc.T("Bridge is not running"));
         if (tip == lastTooltip) return;
         lastTooltip = tip;
         tray.ToolTipText = tip;
-        if (trayStatus != null) trayStatus.Header = status;
-        if (trayBridge != null) trayBridge.Header = Server.Running ? Loc.T("Bridge is running") : Loc.T("Bridge is not running");
+        Set(trayStatus, status);
     }
 
     // ---- Exit ----
@@ -241,6 +362,7 @@ public partial class App : Application, IStoreUi
     {
         if (Quitting) return;
         Quitting = true;
+        try { updateTimer?.Stop(); } catch { }
         try { Clipboard.Stop(); } catch { }
         try { Store.Shutdown(); } catch { }
         try { Server.Stop(); } catch { }

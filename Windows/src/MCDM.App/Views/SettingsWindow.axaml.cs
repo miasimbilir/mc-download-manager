@@ -125,6 +125,10 @@ public partial class SettingsWindow : Window
         ConcurrentSlider.ValueChanged += (_, e) => { settings.MaxConcurrent = (int)Math.Round(e.NewValue); Labels(); app.Store.PumpQueue(); };
         Labels();
 
+        SpeedLimitBox.Value = settings.SpeedLimitKb;
+        SpeedLimitBox.ValueChanged += (_, e) => { if (e.NewValue is { } kb) settings.SpeedLimitKb = (int)kb; };
+        SpeedLimitUnit.Text = Loc.T("{0}/s", "KB");
+
         Startup.IsEnabled = Shell.StartupSupported;
         Startup.IsChecked = Shell.StartupEnabled;
         Startup.IsCheckedChanged += (_, _) =>
@@ -142,7 +146,20 @@ public partial class SettingsWindow : Window
         };
 
         VersionText.Text = $"{AppInfo.Name} {AppInfo.Version}";
-        ProjectPage.Click += (_, _) => Shell.OpenUrl("https://github.com/mstcvk/mc-download-manager");
+        ProjectPage.Click += (_, _) => Shell.OpenUrl(Updater.ProjectUrl);
+        CheckUpdates.Click += async (_, _) =>
+        {
+            CheckUpdates.IsEnabled = false;
+            UpdateStatus.Text = Loc.T("Checking…");
+            UpdateStatus.IsVisible = true;
+            UpdateStatus.Text = await app.CheckForUpdatesAsync(manual: true);
+            CheckUpdates.IsEnabled = true;
+        };
+        if (app.AvailableUpdate is { } found)
+        {
+            UpdateStatus.Text = Loc.T("Version {0} is available", found.Version);
+            UpdateStatus.IsVisible = true;
+        }
     }
 
     // ---- Browser extensions ----
@@ -198,10 +215,13 @@ public partial class SettingsWindow : Window
         {
             if (!browserRows.TryGetValue(b.Name, out var row)) continue;
             var connected = app.Server.IsExtensionConnected(b.Id, 3600);
+            // Connected, but with the code of an earlier version: the browser has to load the new files.
+            var outdated = connected && app.Server.IsExtensionOutdated(b.Id);
             var prepared = !b.Firefox && BrowserIntegration.FilesPrepared(b);
-            row.Text.Text = connected ? Loc.T("Connected") : prepared ? Loc.T("Files prepared, not loaded yet") : Loc.T("Not installed");
-            row.Icon.Data = Icons.Get(connected ? "IconCheckmarkCircleFilled" : "IconCircle");
-            var brush = new DynamicResourceExtension(connected ? "OkBrush" : "SecondaryTextBrush");
+            row.Text.Text = outdated ? (b.Firefox ? Loc.T("Old version — add it again with the setup wizard") : Loc.T("Old version — click “Reload” on the extensions page"))
+                : connected ? Loc.T("Connected") : prepared ? Loc.T("Files prepared, not loaded yet") : Loc.T("Not installed");
+            row.Icon.Data = Icons.Get(outdated ? "IconWarningFilled" : connected ? "IconCheckmarkCircleFilled" : "IconCircle");
+            var brush = new DynamicResourceExtension(outdated ? "WarnBrush" : connected ? "OkBrush" : "SecondaryTextBrush");
             row.Icon[!ForegroundProperty] = brush;
             row.Text[!TextBlock.ForegroundProperty] = brush;
         }

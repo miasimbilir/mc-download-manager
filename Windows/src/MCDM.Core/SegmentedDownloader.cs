@@ -208,6 +208,15 @@ public sealed class SegmentedDownloader
         return null;
     }
 
+    /// One request for the headers alone: size, the server's name for the file, whether ranges work.
+    /// Used to show these before a download is confirmed; nothing is written anywhere.
+    public static async Task<ProbeResult> ProbeOnceAsync(Uri url, Dictionary<string, string> headers, CancellationToken ct)
+    {
+        var dl = new SegmentedDownloader(new Configuration { Url = url, Headers = headers, PartPath = "" });
+        try { return await dl.ProbeAsync(ct).ConfigureAwait(false); }
+        finally { dl.http.Dispose(); }
+    }
+
     private async Task<ProbeResult> ProbeAsync(CancellationToken ct)
     {
         var (resp, finalUrl) = await SendAsync("bytes=0-0", ct).ConfigureAwait(false);
@@ -334,7 +343,7 @@ public sealed class SegmentedDownloader
                 int n;
                 try
                 {
-                    n = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)), idle.Token).ConfigureAwait(false);
+                    n = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(RateLimiter.ChunkSize(buffer.Length), remaining)), idle.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
@@ -344,6 +353,12 @@ public sealed class SegmentedDownloader
                 Write(buffer, n, offset);
                 advance(n);
                 ReportProgress();
+                if (RateLimiter.Limited)
+                {
+                    // Speed limit: the idle timer must not run while this connection waits for its turn.
+                    idle.CancelAfter(Timeout.InfiniteTimeSpan);
+                    await RateLimiter.WaitAsync(n, ct).ConfigureAwait(false);
+                }
             }
         }
         finally

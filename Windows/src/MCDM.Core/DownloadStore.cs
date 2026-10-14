@@ -16,7 +16,25 @@ public sealed class NewDownloadRequest(Uri url)
     public DownloadKind Kind { get; set; } = DownloadKind.file;
     public Dictionary<string, string> ExtraHeaders { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public int? Segments { get; set; }
+    /// Handed over by the browser rather than typed or pasted into the app: the user has not seen it yet,
+    /// so a file is shown first ("download this?") and an address that is already in the list is not added twice.
+    public bool Confirm { get; set; }
+    /// The user asked for another copy of something that was already downloaded.
+    public bool AllowDuplicate { get; set; }
 }
+
+public enum DownloadDecision { Start, Later, Cancel }
+
+/// The answer to "download this file?". `Directory` and `FileName` are null unless the user changed them.
+public sealed record DownloadAnswer(DownloadDecision Decision, string? Directory = null, string? FileName = null, bool DontAskAgain = false)
+{
+    public static DownloadAnswer Start { get; } = new(DownloadDecision.Start);
+}
+
+public enum DuplicateDecision { Open, Reveal, DownloadAgain, Cancel }
+
+/// What to do with the computer once nothing is left to download. Chosen for one run of the queue.
+public enum QueueEndAction { None, Sleep, Shutdown }
 
 public sealed record BrowserCookie(string Name, string Value, string Domain, string Path, bool Secure, double ExpirationDate);
 
@@ -30,6 +48,14 @@ public interface IStoreUi
     Task<(bool Install, bool DontAskAgain)> AskInstallDenoAsync();
     /// Lets the user pick a resolution (or audio only) for a video. null = the user cancelled the download.
     Task<VideoFormatAnswer?> AskVideoFormatAsync(DownloadItem item, VideoInfo info);
+    /// Shows a file the browser handed over (its size and the server's name for it arrive on the item a
+    /// moment later) and asks whether and where to download it. Without a UI: download it as it is.
+    Task<DownloadAnswer> AskDownloadAsync(DownloadItem item) => Task.FromResult(DownloadAnswer.Start);
+    /// The browser handed over something that was downloaded before and is still on disk.
+    /// Without a UI: download it again (it gets a numbered name).
+    Task<DuplicateDecision> AskDuplicateAsync(DownloadItem existing) => Task.FromResult(DuplicateDecision.DownloadAgain);
+    /// The last download ended and the user asked for the computer to sleep or shut down after that.
+    void QueueFinished(QueueEndAction action) { }
 }
 
 public sealed class NoUi : IStoreUi
@@ -65,6 +91,13 @@ public sealed class DownloadStore
     private readonly Dictionary<Guid, CancellationTokenSource> formatQuestions = [];
     /// Videos that have been through the quality question in this run (answered, or nothing to choose from).
     private readonly HashSet<Guid> formatDecided = [];
+    /// Files whose "download this?" question is on screen.
+    private readonly Dictionary<Guid, CancellationTokenSource> confirmations = [];
+    /// Finished downloads whose "you already have this" question is on screen.
+    private readonly HashSet<Guid> duplicateQuestions = [];
+    /// Playlists: which video yt-dlp is at.
+    private readonly Dictionary<Guid, (int Index, int Count)> playlistPosition = [];
+    private QueueEndAction whenDone;
     private readonly Dictionary<Guid, (long Bytes, long Ticks)> samples = [];
     private readonly Timer timer;
     private readonly string storePath;
@@ -77,14 +110,40 @@ public sealed class DownloadStore
         Settings = settings;
         this.storePath = storePath ?? AppPaths.DownloadsFile;
         Load();
+        RateLimiter.BytesPerSecond = settings.SpeedLimitBytes;
+        settings.PropertyChanged += OnSettingsChanged;
         timer = new Timer(_ => MainThread.Post(Tick), null, 500, 500);
+    }
+
+    private void OnSettingsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not (nameof(AppSettings.SpeedLimitEnabled) or nameof(AppSettings.SpeedLimitKb))) return;
+        RateLimiter.BytesPerSecond = Settings.SpeedLimitBytes;
+        RaiseChanged();
+    }
+
+    /// One-shot: what happens to the computer when the last download has ended. Back to None once it fired.
+    public QueueEndAction WhenDone
+    {
+        get => whenDone;
+        set
+        {
+            if (whenDone == value) return;
+            whenDone = value;
+            RaiseChanged();
+        }
     }
 
     // ---- Queries ----
 
-    /// Final folder for an item: base folder, plus a category subfolder when enabled.
+    /// Final folder for an item: base folder, plus a category subfolder when enabled; a folder the user
+    /// picked for this download is taken as it is.
     public string DestinationDirectory(DownloadItem item) =>
-        Settings.OrganizeByCategory ? Path.Combine(item.Directory, item.Category.Label()) : item.Directory;
+        Settings.OrganizeByCategory && !item.ExactDirectory ? Path.Combine(item.Directory, item.Category.Label()) : item.Directory;
+
+    /// Where `item` would go under another name (the category follows the extension).
+    public string DestinationDirectory(DownloadItem item, string fileName) =>
+        Settings.OrganizeByCategory && !item.ExactDirectory ? Path.Combine(item.Directory, FileCategories.Detect(fileName, item.Kind).Label()) : item.Directory;
 
     public string DestinationPath(DownloadItem item) => Path.Combine(DestinationDirectory(item), item.FileName);
 
@@ -135,6 +194,9 @@ public sealed class DownloadStore
         if (!string.IsNullOrEmpty(req.CookieHeader)) headers["Cookie"] = req.CookieHeader;
         if (!headers.ContainsKey("User-Agent")) headers["User-Agent"] = DefaultUserAgent;
 
+        var fromBrowser = req.Confirm && req.Kind == DownloadKind.file;
+        if (fromBrowser && !req.AllowDuplicate && AlreadyKnown(req, headers) is { } known) return known;
+
         var name = string.IsNullOrEmpty(req.FileName) ? FileNames.FromUrl(req.Url) : req.FileName;
         if (req.Kind == DownloadKind.video) name = req.Url.Host.Length > 0 ? req.Url.Host : "video";
         name = FileNames.Sanitize(name);
@@ -153,10 +215,133 @@ public sealed class DownloadStore
         try { Directory.CreateDirectory(item.Directory); } catch { }
         Items.Insert(0, item);
         ScheduleSave();
-        if (Settings.AutoStart) PumpQueue();
-        if (Settings.ShowDetailOnStart) Ui.ShowDetail(item.Id);
+        if (fromBrowser && Settings.AskBeforeDownload) AskBeforeStart(item);
+        else
+        {
+            if (Settings.AutoStart) PumpQueue();
+            if (Settings.ShowDetailOnStart) Ui.ShowDetail(item.Id);
+        }
         RaiseChanged();
         return item;
+    }
+
+    /// The browser handed over an address that is already in the list. An unfinished download is shown
+    /// instead of being added a second time; for a finished one whose file is still there the user is asked.
+    /// Returns the existing item, or null when the request should be added as usual.
+    private DownloadItem? AlreadyKnown(NewDownloadRequest req, Dictionary<string, string> headers)
+    {
+        var url = req.Url.AbsoluteUri;
+        foreach (var old in Items.Where(i => i.Kind == DownloadKind.file && i.Url == url).ToList())
+        {
+            switch (old.State)
+            {
+                case DownloadState.cancelled:
+                    Remove(old.Id);                     // the new request takes its place
+                    break;
+                case DownloadState.completed:
+                    if (!FileNames.Exists(old.FinalPath)) break;
+                    if (duplicateQuestions.Add(old.Id)) AskAboutDuplicate(old, req);
+                    return old;
+                case DownloadState.failed:
+                    // Try again with what the browser sends now (an expired sign-in is a common reason for the failure).
+                    old.Headers = headers;
+                    Resume(old.Id);
+                    if (Settings.ShowDetailOnStart) Ui.ShowDetail(old.Id);
+                    return old;
+                default:
+                    if (old.State == DownloadState.paused) old.Headers = headers;
+                    if (!old.AwaitingConfirmation) Ui.ShowDetail(old.Id);
+                    return old;
+            }
+        }
+        return null;
+    }
+
+    private void AskAboutDuplicate(DownloadItem old, NewDownloadRequest req)
+    {
+        var id = old.Id;
+        Ui.AskDuplicateAsync(old).ContinueWith(t => MainThread.Post(() =>
+        {
+            duplicateQuestions.Remove(id);
+            switch (t.IsCompletedSuccessfully ? t.Result : DuplicateDecision.Cancel)
+            {
+                case DuplicateDecision.Open: Open(old); break;
+                case DuplicateDecision.Reveal: Reveal(old); break;
+                case DuplicateDecision.DownloadAgain:
+                    // The user has just asked for it: no second question, and it starts now.
+                    req.AllowDuplicate = true;
+                    req.Confirm = false;
+                    var again = Add(req);
+                    if (again.State == DownloadState.queued) StartNow(again.Id);
+                    break;
+            }
+        }));
+    }
+
+    /// A file from the browser waits in the list until the user has seen what it is and where it goes.
+    private void AskBeforeStart(DownloadItem item)
+    {
+        var id = item.Id;
+        var cts = new CancellationTokenSource();
+        confirmations[id] = cts;
+        item.AwaitingConfirmation = true;
+        bool Waiting() => confirmations.TryGetValue(id, out var c) && ReferenceEquals(c, cts);
+
+        // Size and the server's name for the file, for the question. The download asks again when it starts.
+        var url = item.Uri;
+        var headers = new Dictionary<string, string>(item.Headers, StringComparer.OrdinalIgnoreCase);
+        Task.Run(async () =>
+        {
+            ProbeResult? probe = null;
+            try { probe = await SegmentedDownloader.ProbeOnceAsync(url, headers, cts.Token).ConfigureAwait(false); }
+            catch { }               // the question works without it; a real problem shows when the download starts
+            MainThread.Post(() =>
+            {
+                if (!Waiting() || Find(id) is not { } current) return;
+                if (probe != null) ApplyProbe(current, probe);
+                current.Probed = true;
+                current.Touch();
+                RaiseChanged();
+            });
+        });
+
+        Ui.AskDownloadAsync(item).ContinueWith(t => MainThread.Post(() =>
+        {
+            if (!Waiting()) return;         // removed or paused meanwhile, or the app is closing
+            StopConfirmation(id);
+            var answer = t.IsCompletedSuccessfully ? t.Result : DownloadAnswer.Start;
+            if (answer.DontAskAgain) Settings.AskBeforeDownload = false;
+            if (answer.Decision == DownloadDecision.Cancel) { Remove(id); return; }
+            Update(id, i =>
+            {
+                if (!string.IsNullOrWhiteSpace(answer.FileName) && FileNames.Sanitize(answer.FileName) is var name && name != i.FileName)
+                {
+                    i.FileName = name;
+                    i.NameLocked = true;
+                }
+                if (!string.IsNullOrWhiteSpace(answer.Directory))
+                {
+                    i.Directory = answer.Directory;
+                    i.ExactDirectory = true;
+                }
+                if (answer.Decision == DownloadDecision.Later) i.State = DownloadState.paused;
+            });
+            ScheduleSave();
+            if (answer.Decision == DownloadDecision.Start && Find(id) is { } go)
+            {
+                // The user has just said "download": it starts now, whatever the queue settings are.
+                StartItem(go);
+                if (Settings.ShowDetailOnStart) Ui.ShowDetail(id);
+            }
+            RaiseChanged();
+        }));
+    }
+
+    private void StopConfirmation(Guid id)
+    {
+        if (!confirmations.Remove(id, out var cts)) return;
+        try { cts.Cancel(); } catch { }
+        if (Find(id) is { } item) item.AwaitingConfirmation = false;
     }
 
     public int AddUrls(string text, DownloadKind kind, int? segments = null)
@@ -179,10 +364,27 @@ public sealed class DownloadStore
         foreach (var item in Items.Reverse().ToList())
         {
             if (slots <= 0) break;
-            if (item.State != DownloadState.queued) continue;
+            if (item.State != DownloadState.queued || item.AwaitingConfirmation) continue;
             StartItem(item);
             slots--;
         }
+    }
+
+    /// "Download" on something that has not started yet: starts it now, ahead of the queue and its limit.
+    public void StartNow(Guid id)
+    {
+        var item = Find(id);
+        if (item == null) return;
+        StopConfirmation(id);       // "Download" in the list answers the open question as well
+        if (item.State is DownloadState.paused or DownloadState.failed or DownloadState.cancelled)
+        {
+            Update(id, i => { i.State = DownloadState.queued; i.ErrorMessage = null; });
+            cookielessVideos.Remove(id);
+            formatDecided.Remove(id);
+        }
+        if (item.State != DownloadState.queued) return;
+        StartItem(item);
+        RaiseChanged();
     }
 
     private void StartItem(DownloadItem item)
@@ -229,23 +431,33 @@ public sealed class DownloadStore
 
     private void HandleProbe(Guid id, ProbeResult p)
     {
+        // Paused or cancelled just before the answer arrived: the row must not come back to life.
+        if (Find(id) is not { State: DownloadState.probing }) return;
         Update(id, item =>
         {
-            item.TotalBytes = p.TotalBytes;
-            item.SupportsRanges = p.SupportsRanges;
+            ApplyProbe(item, p);
             item.State = DownloadState.downloading;
-            if (!string.IsNullOrEmpty(p.SuggestedFileName))
-            {
-                item.FileName = FileNames.Sanitize(p.SuggestedFileName);
-            }
-            else if (p.FinalUrl != null && p.FinalUrl != item.Uri && item.FileName == FileNames.Sanitize(FileNames.FromUrl(item.Uri)))
-            {
-                var candidate = FileNames.FromUrl(p.FinalUrl);
-                if (FileNames.Extension(candidate).Length > 0) item.FileName = FileNames.Sanitize(candidate);
-            }
-            if (FileNames.Extension(item.FileName).Length == 0 && FileNames.ExtensionForMime(p.ContentType) is { } ext)
-                item.FileName += "." + ext;
         });
+    }
+
+    /// What the server says about the file: its size and, unless the user named it, its name.
+    private static void ApplyProbe(DownloadItem item, ProbeResult p)
+    {
+        item.Probed = true;
+        item.TotalBytes = p.TotalBytes;
+        item.SupportsRanges = p.SupportsRanges;
+        if (item.NameLocked) return;
+        if (!string.IsNullOrEmpty(p.SuggestedFileName))
+        {
+            item.FileName = FileNames.Sanitize(p.SuggestedFileName);
+        }
+        else if (p.FinalUrl != null && p.FinalUrl != item.Uri && item.FileName == FileNames.Sanitize(FileNames.FromUrl(item.Uri)))
+        {
+            var candidate = FileNames.FromUrl(p.FinalUrl);
+            if (FileNames.Extension(candidate).Length > 0) item.FileName = FileNames.Sanitize(candidate);
+        }
+        if (FileNames.Extension(item.FileName).Length == 0 && FileNames.ExtensionForMime(p.ContentType) is { } ext)
+            item.FileName += "." + ext;
     }
 
     private void HandleFinish(Guid id, Exception? error)
@@ -289,7 +501,20 @@ public sealed class DownloadStore
         }
         ScheduleSave();
         PumpQueue();
+        if (item.State is DownloadState.completed or DownloadState.failed) QueueMayHaveEnded();
         RaiseChanged();
+    }
+
+    /// Called when a download ended by itself (finished or failed, not paused by the user): if that was
+    /// the last one and the user asked for it, the computer goes to sleep or shuts down.
+    private void QueueMayHaveEnded()
+    {
+        if (whenDone == QueueEndAction.None) return;
+        if (Items.Any(i => i.State.IsActive() || i.State == DownloadState.queued)) return;
+        var action = whenDone;
+        whenDone = QueueEndAction.None;
+        Save();
+        Ui.QueueFinished(action);
     }
 
     private static string Describe(Exception e)
@@ -313,7 +538,7 @@ public sealed class DownloadStore
                 i.State = DownloadState.failed;
                 i.ErrorMessage = Loc.T("yt-dlp not found. Use “Install yt-dlp” in Settings ▸ Video.");
             });
-            MainThread.Post(PumpQueue);
+            MainThread.Post(() => { PumpQueue(); QueueMayHaveEnded(); });
             return;
         }
         if (VideoDownloader.IsYouTube(item.Uri) && VideoDownloader.LocateDeno() == null
@@ -338,17 +563,31 @@ public sealed class DownloadStore
             return;
         }
         var useCookies = !cookielessVideos.Contains(id);
+        // An address that names nothing but a playlist is one, asked or not.
+        var playlist = item.Playlist || Links.Playlist(item.Uri) == PlaylistKind.Only;
         Update(id, i =>
         {
             i.State = DownloadState.downloading; i.ErrorMessage = null; i.ReceivedBytes = 0; i.Speed = 0; i.TotalBytes = -1;
             i.Stage = Loc.T("Fetching video information…");
+            i.Playlist = playlist;
+            i.Note = null;
+            i.WorkingPath = null;
             if (useCookies) i.Log = "";     // keep the failed attempt's output visible above the retry
         });
         var outDir = DestinationDirectory(item);
         try { Directory.CreateDirectory(outDir); } catch { }
+        var options = new VideoOptions
+        {
+            QualityTag = item.QualityTag,
+            Playlist = playlist,
+            SubtitleLanguages = item.Subtitles ?? Settings.VideoSubtitles ? Settings.SubtitleLanguages : null,
+            LimitKb = Settings.SpeedLimitEnabled ? Settings.SpeedLimitKb : 0,
+        };
         Process? started = null;
         bool Current() => started != null && videoProcesses.TryGetValue(id, out var p) && ReferenceEquals(p, started);
         videoPhase[id] = (0, 0, -1);
+        playlistPosition.Remove(id);
+        string Staged(string stage) => playlistPosition.TryGetValue(id, out var at) ? $"{at.Index}/{at.Count} · {stage}" : stage;
         started = VideoDownloader.Run(exe, item.Uri, outDir, item.FormatArgs ?? Settings.YtdlpFormatArguments, item.Headers, item.CookieFile, useCookies,
             onProgress: p => MainThread.Post(() =>
             {
@@ -373,7 +612,15 @@ public sealed class DownloadStore
                 {
                     var log = i.Log + line + "\n";
                     i.Log = log.Length > 6000 ? log[^6000..] : log;
-                    if (VideoDownloader.Stage(line) is { } st) i.Stage = st;
+                    if (VideoDownloader.PlaylistPosition(line) is { } at)
+                    {
+                        // The next video of the list: its sizes start from nothing again.
+                        playlistPosition[id] = at;
+                        videoPhase[id] = (0, 0, -1);
+                        i.ReceivedBytes = 0; i.TotalBytes = -1; i.Speed = 0;
+                        i.Stage = Staged(Loc.T("Fetching video information…"));
+                    }
+                    if (VideoDownloader.Stage(line) is { } st) i.Stage = Staged(st);
                     if (line.StartsWith("MCFMT|", StringComparison.Ordinal))
                     {
                         var parts = line.Split('|');
@@ -389,18 +636,25 @@ public sealed class DownloadStore
                     if (d >= 0)
                     {
                         // Show the final title; strip yt-dlp's intermediate ".f137" format suffix.
-                        var name = Path.GetFileName(line[(d + "Destination: ".Length)..].Trim());
-                        if (name.Length > 0) i.FileName = VideoDownloader.StripFormatSuffix(name);
+                        var path = line[(d + "Destination: ".Length)..].Trim();
+                        var name = Path.GetFileName(path);
+                        if (name.Length > 0)
+                        {
+                            i.WorkingPath = Path.Combine(Path.GetDirectoryName(path) ?? "", VideoDownloader.StripFormatSuffix(name));
+                            // A playlist keeps the list's name in the row; its folder says so as soon as it exists.
+                            if (!playlist) i.FileName = VideoDownloader.StripFormatSuffix(name);
+                            else if (Path.GetFileName(Path.GetDirectoryName(path)) is { Length: > 0 } folder && Path.IsPathFullyQualified(path)) i.FileName = folder;
+                        }
                     }
-                    if (line.StartsWith("[Merger] Merging formats into \"", StringComparison.Ordinal))
+                    if (!playlist && line.StartsWith("[Merger] Merging formats into \"", StringComparison.Ordinal))
                     {
                         int q1 = line.IndexOf('"'), q2 = line.LastIndexOf('"');
                         if (q1 >= 0 && q2 > q1) i.FileName = Path.GetFileName(line[(q1 + 1)..q2]);
                     }
                 });
             }),
-            onFinish: (path, error) => MainThread.Post(() => { if (Current() || started == null) HandleVideoFinish(id, path, error); }),
-            qualityTag: item.QualityTag);
+            onFinish: result => MainThread.Post(() => { if (Current() || started == null) HandleVideoFinish(id, result); }),
+            options);
         if (started != null) videoProcesses[id] = started;
     }
 
@@ -460,7 +714,8 @@ public sealed class DownloadStore
                 }
                 Update(id, i =>
                 {
-                    if (info.Title.Length > 0) i.FileName = FileNames.Sanitize(info.Title);
+                    var title = info.Playlist is { Only: true, Title.Length: > 0 } list ? list.Title : info.Title;
+                    if (title.Length > 0) i.FileName = FileNames.Sanitize(title);
                     i.Stage = Loc.T("Waiting for the quality choice…");
                 });
                 Ui.AskVideoFormatAsync(current, info).ContinueWith(t => MainThread.Post(() =>
@@ -470,6 +725,17 @@ public sealed class DownloadStore
                     if (!mine) return;
                     var answer = t.IsCompletedSuccessfully ? t.Result : VideoFormatAnswer.Default;
                     if (answer == null) { Cancel(id); return; }
+                    if (answer.Subtitles is { } subtitles) Settings.VideoSubtitles = subtitles;     // the next question starts from this
+                    Update(id, i =>
+                    {
+                        i.Playlist = answer.Playlist;
+                        if (answer.Subtitles != null) i.Subtitles = answer.Subtitles;
+                        if (!string.IsNullOrWhiteSpace(answer.Directory))
+                        {
+                            i.Directory = answer.Directory;
+                            i.ExactDirectory = true;
+                        }
+                    });
                     if (answer.MaxHeight != VideoFormatAnswer.UseDefault)
                     {
                         if (answer.Remember)
@@ -479,11 +745,21 @@ public sealed class DownloadStore
                         }
                         Update(id, i =>
                         {
-                            i.FormatArgs = AppSettings.BuildFormatArguments("", Settings.VideoContainer, answer.MaxHeight, answer.Selector);
-                            i.QualityTag = answer.MaxHeight > 0 ? answer.Nominal + "p" : null;
+                            if (answer.Playlist)
+                            {
+                                // Format ids change from video to video: the list gets the picked height as a general cap.
+                                var cap = answer.MaxHeight > 0 ? Math.Max(answer.MaxHeight, answer.Nominal) : answer.MaxHeight;
+                                i.FormatArgs = AppSettings.BuildFormatArguments("", Settings.VideoContainer, cap);
+                                i.QualityTag = null;
+                            }
+                            else
+                            {
+                                i.FormatArgs = AppSettings.BuildFormatArguments("", Settings.VideoContainer, answer.MaxHeight, answer.Selector);
+                                i.QualityTag = answer.MaxHeight > 0 ? answer.Nominal + "p" : null;
+                            }
                         });
-                        ScheduleSave();
                     }
+                    ScheduleSave();
                     formatDecided.Add(id);
                     if (Find(id) is { } again) StartVideo(again);
                 }));
@@ -496,23 +772,43 @@ public sealed class DownloadStore
         if (formatQuestions.Remove(id, out var cts)) try { cts.Cancel(); } catch { }
     }
 
-    private void HandleVideoFinish(Guid id, string? path, Exception? error)
+    private void HandleVideoFinish(Guid id, VideoResult result)
     {
         videoProcesses.Remove(id);
         videoPhase.Remove(id);
+        var position = playlistPosition.GetValueOrDefault(id);
+        playlistPosition.Remove(id);
         var item = Find(id);
         if (item == null || item.State != DownloadState.downloading) return;    // paused or cancelled by the user
-        if (error == null)
+        var error = result.Error;
+        var files = result.Files.Where(File.Exists).ToList();
+        // yt-dlp can end with an error and still have done its job: a playlist with one video that is no
+        // longer there, a subtitle the site would not give. What was saved counts.
+        if (error == null || files.Count > 0)
         {
             item.State = DownloadState.completed;
             item.CompletedAt = DateTime.UtcNow;
             item.Speed = 0;
             item.Stage = "";
-            if (path != null)
+            item.WorkingPath = null;
+            if (error != null) item.Log += "→ " + error.Message + "\n";
+            foreach (var f in files) Shell.MarkAsDownloaded(f, item.Url, null);
+            if (item.Playlist && files.Count > 0)
             {
+                // The row stands for the folder the videos went into.
+                var folder = Path.GetDirectoryName(files[^1])!;
+                item.FinalPath = folder;
+                item.FileName = Path.GetFileName(folder);
+                long size = 0;
+                foreach (var f in files) try { size += new FileInfo(f).Length; } catch { }
+                item.TotalBytes = item.ReceivedBytes = size;
+                if (position.Count > files.Count) item.Note = Loc.T("{0} of {1} videos saved", files.Count, position.Count);
+            }
+            else if (files.Count > 0)
+            {
+                var path = files[^1];
                 item.FinalPath = path;
                 item.FileName = Path.GetFileName(path);
-                Shell.MarkAsDownloaded(path, item.Url, null);
                 try
                 {
                     var size = new FileInfo(path).Length;
@@ -548,6 +844,7 @@ public sealed class DownloadStore
         }
         ScheduleSave();
         PumpQueue();
+        QueueMayHaveEnded();
         RaiseChanged();
     }
 
@@ -603,6 +900,7 @@ public sealed class DownloadStore
         if (videoProcesses.Remove(id, out var p)) VideoDownloader.Kill(p);
         denoWaiters.Remove(id);
         StopFormatQuestion(id);
+        StopConfirmation(id);
         ScheduleSave();
         PumpQueue();
         RaiseChanged();
@@ -627,6 +925,7 @@ public sealed class DownloadStore
         if (videoProcesses.Remove(id, out var p)) VideoDownloader.Kill(p);
         denoWaiters.Remove(id);
         StopFormatQuestion(id);
+        StopConfirmation(id);
         TryDelete(item.PartPath);
         DeleteVideoPartials(item, p);
         Update(id, i =>
@@ -645,15 +944,18 @@ public sealed class DownloadStore
         if (item == null) return;
         // Always goes to the Recycle Bin so the user can recover the file. If it could not be moved
         // (open in a player, the user declined a permanent delete), the row stays so that is visible.
-        if (deleteFile && item.FinalPath != null && File.Exists(item.FinalPath))
+        // Two rows can stand for the same playlist folder (the list downloaded twice): it goes with the last of them.
+        if (deleteFile && FileNames.Exists(item.FinalPath) && !Items.Any(o => !ReferenceEquals(o, item) && o.FinalPath == item.FinalPath))
         {
-            Shell.MoveToRecycleBin(item.FinalPath);
-            if (File.Exists(item.FinalPath)) return;
+            Shell.MoveToRecycleBin(item.FinalPath!);
+            if (FileNames.Exists(item.FinalPath)) return;
         }
         if (downloaders.Remove(id, out var dl)) dl.Stop();
         if (videoProcesses.Remove(id, out var p)) VideoDownloader.Kill(p);
         denoWaiters.Remove(id);
         StopFormatQuestion(id);
+        StopConfirmation(id);
+        playlistPosition.Remove(id);
         formatDecided.Remove(id);
         TryDelete(item.PartPath);
         DeleteVideoPartials(item, p);
@@ -683,13 +985,14 @@ public sealed class DownloadStore
 
     public void Reveal(DownloadItem item)
     {
-        if (item.FinalPath != null && File.Exists(item.FinalPath)) Shell.RevealFile(item.FinalPath);
+        if (FileNames.Exists(item.FinalPath)) Shell.RevealFile(item.FinalPath!);
         else Shell.OpenFolder(Directory.Exists(DestinationDirectory(item)) ? DestinationDirectory(item) : item.Directory);
     }
 
     public void Open(DownloadItem item)
     {
-        if (item.FinalPath != null && File.Exists(item.FinalPath)) Shell.OpenFile(item.FinalPath);
+        if (File.Exists(item.FinalPath)) Shell.OpenFile(item.FinalPath);
+        else if (Directory.Exists(item.FinalPath)) Shell.OpenFolder(item.FinalPath);       // a playlist
     }
 
     /// Creates the download folder up front so the first download does not fail on a missing folder.
@@ -701,6 +1004,7 @@ public sealed class DownloadStore
     public void Shutdown()
     {
         timer.Dispose();
+        Settings.PropertyChanged -= OnSettingsChanged;
         PauseAll();
         Save();
     }
@@ -826,8 +1130,9 @@ public sealed class DownloadStore
         // Another row may be fetching the same video into the same files.
         if (Items.Any(i => !ReferenceEquals(i, item) && i.Kind == DownloadKind.video && i.State.IsActive() && i.Url == item.Url)) return;
         var id = item.Id;
-        var dir = DestinationDirectory(item);
-        var name = item.FileName;
+        // A playlist writes into its own folder, one video after the other; the row itself carries the list's name.
+        var dir = item.WorkingPath != null && Path.GetDirectoryName(item.WorkingPath) is { Length: > 0 } working ? working : DestinationDirectory(item);
+        var name = item.WorkingPath != null ? Path.GetFileName(item.WorkingPath) : item.FileName;
         Task.Run(async () =>
         {
             try { if (killed != null) await killed.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); } catch { }
@@ -845,6 +1150,8 @@ public sealed class DownloadStore
     public const string DefaultUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 }
+
+public enum PlaylistKind { None, WithVideo, Only }
 
 /// Parsing of links typed, pasted or copied by the user.
 public static class Links
@@ -874,6 +1181,26 @@ public static class Links
     private static readonly string[] videoHosts =
         ["youtube.com", "youtu.be", "vimeo.com", "dailymotion.com", "twitter.com", "x.com",
          "instagram.com", "tiktok.com", "twitch.tv", "facebook.com", "reddit.com", "bilibili.com"];
+
+    /// Whether a YouTube address carries a playlist: on its own (/playlist?list=…) or along with the video
+    /// being watched (watch?v=…&list=…). "Mixes" (list=RD…) are endless and made up per viewer; they do not count.
+    public static PlaylistKind Playlist(Uri url)
+    {
+        if (!VideoDownloader.IsYouTube(url)) return PlaylistKind.None;
+        string? list = null, video = null;
+        foreach (var pair in url.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var kv = pair.Split('=', 2);
+            if (kv.Length != 2 || kv[1].Length == 0) continue;
+            if (kv[0] == "list") list = kv[1];
+            else if (kv[0] == "v") video = kv[1];
+        }
+        if (list == null || list.StartsWith("RD", StringComparison.Ordinal)) return PlaylistKind.None;
+        var path = url.AbsolutePath.TrimEnd('/');
+        if (path.EndsWith("/playlist", StringComparison.Ordinal)) return PlaylistKind.Only;
+        // youtu.be/<id>?list=… and /watch?v=<id>&list=…
+        return video != null || VideoDownloader.HostMatches(url.Host, "youtu.be") ? PlaylistKind.WithVideo : PlaylistKind.None;
+    }
 
     public static bool LooksLikeVideoPage(Uri url)
     {

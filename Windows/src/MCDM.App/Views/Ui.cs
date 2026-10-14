@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 
 namespace MCDM.App.Views;
 
@@ -69,6 +70,49 @@ internal static class Ui
         if (!ok) text.Resource(TextBlock.ForegroundProperty, brush);
         return Row(icon, text);
     }
+
+    /// "C:\…\Downloads  [Choose…]": shows `current()` and lets the user pick another folder.
+    public static Grid FolderRow(Window owner, Func<string> current, Action<string> picked)
+    {
+        var path = new TextBlock { TextTrimming = TextTrimming.PathSegmentEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        void Show()
+        {
+            path.Text = current();
+            ToolTip.SetTip(path, path.Text);
+        }
+        var choose = new Button { Content = Loc.T("Choose…"), Margin = new Thickness(10, 0, 0, 0) };
+        choose.Click += async (_, _) =>
+        {
+            try
+            {
+                IStorageFolder? start = null;
+                // The category subfolder is often not there yet; without a folder that exists the picker
+                // opens in Documents. Start from the nearest one that does.
+                var dir = current();
+                while (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) dir = Path.GetDirectoryName(dir);
+                try { if (!string.IsNullOrEmpty(dir)) start = await owner.StorageProvider.TryGetFolderFromPathAsync(dir); } catch { }
+                var folders = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                {
+                    Title = Loc.T("Save to"), AllowMultiple = false, SuggestedStartLocation = start,
+                });
+                if (folders.Count > 0 && folders[0].TryGetLocalPath() is { Length: > 0 } chosen)
+                {
+                    picked(chosen);
+                    Show();
+                }
+            }
+            catch { }
+        };
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        row.Children.Add(path);
+        Grid.SetColumn(choose, 1);
+        row.Children.Add(choose);
+        row.Tag = (Action)Show;         // callers refresh the text through Refresh(row)
+        Show();
+        return row;
+    }
+
+    public static void Refresh(Grid folderRow) => (folderRow.Tag as Action)?.Invoke();
 
     public static Image Logo(double size)
     {

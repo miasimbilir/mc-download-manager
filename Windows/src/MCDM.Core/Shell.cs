@@ -30,7 +30,12 @@ public static class Shell
     {
         if (!OperatingSystem.IsWindows())
         {
-            try { File.Delete(path); return true; } catch { return false; }
+            try
+            {
+                if (Directory.Exists(path)) Directory.Delete(path, true); else File.Delete(path);
+                return true;
+            }
+            catch { return false; }
         }
         try
         {
@@ -86,6 +91,44 @@ public static class Shell
         if (Links.ParseHttp(url) == null) return;
         OpenFile(url);
     }
+
+    // ---- Power (after the queue has finished) ----
+
+    /// `MCDM_POWER_DRYRUN=1` writes what would have happened to power.log in the app data folder instead
+    /// of doing it (for testing the flow without losing the session).
+    private static bool PowerDryRun(string what)
+    {
+        if (Environment.GetEnvironmentVariable("MCDM_POWER_DRYRUN") != "1") return false;
+        try { File.AppendAllText(Path.Combine(AppPaths.DataDir, "power.log"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {what}\n"); } catch { }
+        return true;
+    }
+
+    /// Puts the computer to sleep (not hibernation; wake timers stay allowed).
+    public static bool Sleep()
+    {
+        if (PowerDryRun("sleep")) return true;
+        if (!OperatingSystem.IsWindows()) return false;
+        try { return SetSuspendState(false, false, false); }
+        catch { return false; }
+    }
+
+    /// Shuts Windows down the ordinary way: a program with unsaved work can still hold it up.
+    public static bool Shutdown()
+    {
+        if (PowerDryRun("shutdown")) return true;
+        if (!OperatingSystem.IsWindows()) return false;
+        try
+        {
+            var exe = Path.Combine(Environment.SystemDirectory, "shutdown.exe");
+            using var p = Process.Start(new ProcessStartInfo(exe, "/s /t 0") { UseShellExecute = false, CreateNoWindow = true });
+            return p != null;
+        }
+        catch { return false; }
+    }
+
+    [DllImport("powrprof.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.U1)]
+    private static extern bool SetSuspendState([MarshalAs(UnmanagedType.U1)] bool hibernate, [MarshalAs(UnmanagedType.U1)] bool forceCritical, [MarshalAs(UnmanagedType.U1)] bool disableWakeEvent);
 
     // ---- Start with Windows (HKCU\...\Run) ----
 
@@ -322,6 +365,29 @@ public static class BrowserIntegration
     }
 
     public static bool FilesPrepared(BrowserKind kind) => File.Exists(Path.Combine(PluginFolder(kind), "manifest.json"));
+
+    /// After an app update the folders the browsers load the extension from still hold the previous
+    /// version. Copies the bundled files over them, in place (the browser has the folder loaded, so it
+    /// is not removed). Returns the browsers whose folder was brought up to date; each of them still has
+    /// to reload the extension to run the new code.
+    public static List<BrowserKind> RefreshPreparedFiles()
+    {
+        var refreshed = new List<BrowserKind>();
+        var source = BundledExtensionFolder;
+        var bundled = BundledVersion;
+        if (bundled == null) return refreshed;
+        foreach (var kind in BrowserKind.All)
+        {
+            if (kind.Firefox || !FilesPrepared(kind) || PreparedVersion(kind) == bundled) continue;
+            try
+            {
+                CopyDirectory(source, PluginFolder(kind));
+                refreshed.Add(kind);
+            }
+            catch { }
+        }
+        return refreshed;
+    }
 
     /// Version of the extension copy the browser is loading (null when not prepared).
     public static string? PreparedVersion(BrowserKind kind) => ManifestVersion(PluginFolder(kind));

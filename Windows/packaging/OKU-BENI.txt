@@ -3,36 +3,57 @@ MC Download Manager — Windows
 
 Kurulum
 -------
+Kurucuyla (Setup.exe) kurduysanız yapacak bir şey yok: uygulama Başlat menüsündedir.
+
+Zip'ten açtıysanız:
 1. Bu klasörü kalıcı bir yere taşıyın (örneğin Belgeler ya da C:\Programlar). Klasördeki
    dosyalar birlikte durmalı: MCDownloadManager.exe, tools, ChromeExtension, FirefoxExtension.xpi.
 2. MCDownloadManager.exe dosyasına çift tıklayın.
    Windows "Bilgisayarınızı korudu" uyarısı gösterirse: "Ek bilgi" > "Yine de çalıştır".
    (Uygulama imzalı değil; kaynak kodu açık.)
-3. İlk açılışta hangi dosya türlerinin yakalanacağını seçin, ardından sihirbaz tarayıcı
-   eklentisini (Chrome, Edge, Brave, Opera, Firefox) adım adım kurdurur.
+
+İlk açılışta hangi dosya türlerinin yakalanacağını seçin, ardından sihirbaz tarayıcı
+eklentisini (Chrome, Edge, Brave, Opera, Firefox) adım adım kurdurur.
 
 Kullanım
 --------
-- Tarayıcıda bir indirme başlattığınızda uygulama devralır ve dosyayı 8 parça halinde indirir.
+- Tarayıcıda bir indirme başlattığınızda uygulama devralır ve önce sorar: dosyanın adı, boyutu ve
+  kaydedileceği yer. "İndir" derseniz dosya 8 parça halinde iner; "Sonra İndir" listede bekletir.
+  Soruyu istemiyorsanız penceredeki "Bir daha sorma" kutusunu işaretleyin (Ayarlar > Genel'den geri açılır).
 - Eklenti düğmesindeki "Bu sayfadaki videoyu indir" YouTube, X, Instagram ve benzeri sitelerden video
   indirir. İndirme başlamadan uygulama kaliteyi sorar (1080p, 720p, 360p... ya da yalnızca ses: MP3).
+  Aynı pencerede altyazıyı ve, adres bir oynatma listesine aitse, listenin tamamını da isteyebilirsiniz.
   İlk YouTube indirmesinde uygulama "deno" adlı yardımcıyı kurmayı önerir; kabul edin.
+- Hız sınırı: ana pencerenin altındaki "Hız sınırı" yazısına tıklayın ya da saatin yanındaki simgeye
+  sağ tıklayıp aynı adlı satırı seçin. Değeri Ayarlar > Genel'den belirlenir.
+- "Bitince": ana pencerenin altından, son indirme de bitince bilgisayarın uyumasını ya da kapanmasını
+  seçebilirsiniz. Öncesinde 30 saniyelik bir geri sayım çıkar; "İptal" ile vazgeçilir.
 - Uygulamadan çıkmış olsanız bile tarayıcıda bir indirme başlatınca eklenti uygulamayı kendisi açar.
 - Pencereyi kapatmak uygulamayı kapatmaz; saatin yanındaki bildirim alanında çalışmaya
   devam eder. Çıkmak için oradaki simgeye sağ tıklayıp "Çık" deyin.
 - İndirilenler: İndirilenler\MC Download Manager
 
+Güncelleme
+----------
+Yeni sürüm çıkınca uygulama haber verir (elle: Ayarlar > Genel > "Şimdi Denetle"). Kurucuyla kurulmuş
+kopya "Şimdi Güncelle" ile kendini günceller; zip kopyasında indirme sayfası açılır.
+Güncellemeden sonra Ayarlar > Tarayıcı Eklentileri bir tarayıcı için "Eski sürüm" diyorsa, o tarayıcının
+eklentiler sayfasında MC Download Manager kartındaki "Yeniden yükle" düğmesine basın.
+
 Sorun olursa
 ------------
-- Klasörde boş bir yere Shift + sağ tık > "PowerShell penceresini buradan aç", sonra:
-      .\MCDownloadManager.exe --selftest
+- Başlat menüsünde "PowerShell" açıp şunu çalıştırın (zip kopyasında exe'nin kendi klasöründen):
+      & "$env:LOCALAPPDATA\Programs\MC Download Manager\MCDownloadManager.exe" --selftest
   Sonuç şu dosyaya yazılır:  %APPDATA%\MC Download Manager\selftest.txt
 - Uygulama beklenmedik biçimde kapanırsa:  %APPDATA%\MC Download Manager\crash.log
 
 Kaldırma
 --------
-Ayarlar > Genel > "Windows oturumu açıldığında başlat" işaretini kaldırın, uygulamadan çıkın,
-klasörü ve Başlat menüsündeki "MC Download Manager" kısayolunu silin. Ayarlar ve liste %APPDATA%\MC Download Manager klasöründedir.
+Kurucuyla kurduysanız: Windows Ayarlar > Uygulamalar > MC Download Manager > Kaldır.
+Zip kopyasında: Ayarlar > Genel > "Windows oturumu açıldığında başlat" işaretini kaldırın, uygulamadan
+çıkın, klasörü ve Başlat menüsündeki "MC Download Manager" kısayolunu silin.
+Ayarlar ve liste %APPDATA%\MC Download Manager klasöründedir.
 
-Kaynak: https://github.com/mstcvk/mc-download-manager  (özgün macOS uygulaması: Mesut Çevik, MIT)
+Windows sürümü: https://github.com/miasimbilir/mc-download-manager
+Özgün macOS uygulaması: Mesut Çevik — https://github.com/mstcvk/mc-download-manager (MIT)
 Gömülü araçlar: yt-dlp (Unlicense), FFmpeg (GPL, tools\ffmpeg-LICENSE.txt)

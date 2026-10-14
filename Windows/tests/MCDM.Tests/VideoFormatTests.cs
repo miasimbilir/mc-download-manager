@@ -233,20 +233,21 @@ public class LiveVideoTests
         public Task<VideoFormatAnswer?> AskVideoFormatAsync(DownloadItem item, VideoInfo info) { Asked = info; return Task.FromResult(choose(info)); }
     }
 
-    private static async Task<(DownloadItem, VideoInfo)> Download(string url, Func<VideoInfo, VideoFormatAnswer?> choose)
+    private static async Task<(DownloadItem, VideoInfo)> Download(string url, Func<VideoInfo, VideoFormatAnswer?> choose, Action<AppSettings>? configure = null)
     {
         var dir = Setup.TempDir();
         var settings = AppSettings.Load(Path.Combine(dir, "settings.json"));
         settings.DownloadDirectory = Path.Combine(dir, "dl");
         settings.ShowDetailOnStart = false;
         settings.DenoPromptSuppressed = true;
+        configure?.Invoke(settings);
         var ui = new Chooser(choose);
         var store = await MainThread.Run(() => new DownloadStore(settings, Path.Combine(dir, "downloads.json")) { Ui = ui });
         var item = await MainThread.Run(() => store.Add(new NewDownloadRequest(new Uri(url)) { Kind = DownloadKind.video }));
-        await Setup.Until(() => item.State is DownloadState.completed or DownloadState.failed, 180, "the download to end");
+        await Setup.Until(() => item.State is DownloadState.completed or DownloadState.failed, 300, "the download to end");
         await MainThread.Run(store.Shutdown);
         Assert.True(item.State == DownloadState.completed, item.ErrorMessage + "\n" + item.Log);
-        Console.WriteLine($"LIVE {url}\n  offered: {string.Join(", ", ui.Asked!.Choices.Select(c => $"{c.Label} {(c.ApproxBytes is { } b ? Fmt.Size(b) : "?")} [{c.Selector}]"))}\n  got: {item.FinalPath} ({new FileInfo(item.FinalPath!).Length} bytes)");
+        Console.WriteLine($"LIVE {url}\n  offered: {string.Join(", ", ui.Asked!.Choices.Select(c => $"{c.Label} {(c.ApproxBytes is { } b ? Fmt.Size(b) : "?")} [{c.Selector}]"))}\n  got: {item.FinalPath} ({item.TotalBytes} bytes) {item.Note}");
         return (item, ui.Asked!);
     }
 
@@ -268,6 +269,39 @@ public class LiveVideoTests
         var (item, _) = await Download("https://www.youtube.com/watch?v=jNQXAC9IVRw", _ => new VideoFormatAnswer(-2, -2, false));
         Assert.EndsWith(".mp3", item.FinalPath);
         Assert.Equal(FileCategory.music, FileCategories.Detect(item.FileName, DownloadKind.file));
+    }
+
+    /// A three-video playlist of the Blender channel (16 minutes in all); MCDM_LIVE_PLAYLIST names another one.
+    [Fact]
+    public async Task Youtube_playlist_smallest_quality()
+    {
+        if (Environment.GetEnvironmentVariable("MCDM_LIVE") != "1") return;
+        var url = Environment.GetEnvironmentVariable("MCDM_LIVE_PLAYLIST") is { Length: > 0 } custom ? custom : "https://www.youtube.com/playlist?list=PLa1F2ddGya_8Geu0rJ4y4dVCc9jZxS2IB";
+        var (item, info) = await Download(url, i => Smallest(i) with { Playlist = true });
+        Assert.NotNull(info.Playlist);
+        Assert.True(info.Playlist!.Only);
+        Assert.True(info.Playlist.Count >= 2);
+        Assert.True(Directory.Exists(item.FinalPath), item.FinalPath);
+        Assert.Equal(Path.GetFileName(item.FinalPath), item.FileName);
+        var files = Directory.GetFiles(item.FinalPath!, "*.mp4").Select(Path.GetFileName).Order().ToList();
+        Console.WriteLine("  files: " + string.Join(" | ", files));
+        Assert.Equal(info.Playlist.Count, files.Count);
+        Assert.StartsWith("001 - ", files[0]);
+        Assert.Null(item.Note);
+        Assert.Equal(files.Sum(f => new FileInfo(Path.Combine(item.FinalPath!, f!)).Length), item.TotalBytes);
+        Assert.Empty(Directory.GetFiles(item.FinalPath!, "*.part"));
+    }
+
+    [Fact]
+    public async Task Youtube_video_with_subtitles()
+    {
+        if (Environment.GetEnvironmentVariable("MCDM_LIVE") != "1") return;
+        // "tr" is a translated automatic caption here: the kind YouTube often refuses (429). The video must arrive either way.
+        var (item, _) = await Download("https://www.youtube.com/watch?v=jNQXAC9IVRw", i => Smallest(i) with { Subtitles = true }, s => s.SubtitleLanguages = "en,tr");
+        Assert.EndsWith(".mp4", item.FinalPath);
+        var subs = Directory.GetFiles(Path.GetDirectoryName(item.FinalPath!)!, "*.srt").Select(Path.GetFileName).ToList();
+        Console.WriteLine("  subtitles: " + string.Join(" | ", subs) + "\n" + string.Join("\n", item.Log.Split('\n').Where(l => l.Contains("ubtitle") || l.StartsWith("ERROR") || l.StartsWith("WARNING"))));
+        Assert.Contains(subs, f => f!.EndsWith(".en.srt"));
     }
 
     [Fact]

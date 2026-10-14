@@ -125,14 +125,18 @@
 
       <!-- Status bar -->
       <Border Grid.Row="2" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="12,6">
-        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
           <Ellipse x:Name="BridgeDot" Width="8" Height="8" VerticalAlignment="Center" />
           <TextBlock Grid.Column="1" x:Name="BridgeText" Classes="secondary" FontSize="12" Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="0,0,18,0" ToolTip.Tip="{l:T 'Unfinished downloads'}" Background="Transparent">
+          <Button Grid.Column="2" x:Name="WhenDoneButton" Classes="tool" Padding="7,2" Margin="0,-3,6,-3" FontSize="12"
+                  ToolTip.Tip="{l:T 'What the computer does once every download has finished. Applies once.'}" />
+          <Button Grid.Column="3" x:Name="LimitButton" Classes="tool" Padding="7,2" Margin="0,-3,12,-3" FontSize="12"
+                  ToolTip.Tip="{l:T 'Click to turn the speed limit on or off. Its value is set in Settings ▸ General.'}" />
+          <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" Margin="0,0,18,0" ToolTip.Tip="{l:T 'Unfinished downloads'}" Background="Transparent">
             <PathIcon Data="{StaticResource IconTextBulletListLtr}" Width="13" Height="13" Foreground="{DynamicResource SecondaryTextBrush}" />
             <TextBlock x:Name="UnfinishedText" Classes="secondary" FontSize="12" />
           </StackPanel>
-          <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" ToolTip.Tip="{l:T 'Total download speed'}" Background="Transparent">
+          <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" ToolTip.Tip="{l:T 'Total download speed'}" Background="Transparent">
             <PathIcon Data="{StaticResource IconCloudArrowDown}" Width="14" Height="14" Foreground="{DynamicResource SecondaryTextBrush}" />
             <TextBlock x:Name="SpeedText" Classes="secondary" FontSize="12" />
           </StackPanel>

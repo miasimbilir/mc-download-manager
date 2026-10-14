@@ -5,6 +5,24 @@ using System.Text.RegularExpressions;
 
 namespace MCDM;
 
+/// What a single yt-dlp run is asked to do beyond the format.
+public sealed record VideoOptions
+{
+    public static VideoOptions None { get; } = new();
+    /// "720p": becomes part of the file name (single videos only).
+    public string? QualityTag { get; init; }
+    /// Download every video of the list into a folder named after it.
+    public bool Playlist { get; init; }
+    /// Subtitle languages for yt-dlp ("tr,en"); null = no subtitles.
+    public string? SubtitleLanguages { get; init; }
+    /// Speed limit in KB/s; 0 = none.
+    public int LimitKb { get; init; }
+}
+
+/// How a yt-dlp run ended. `Files` are the finished files it reported (one per video); a run can end
+/// with an error and still have files (a playlist with a video that is no longer there).
+public sealed record VideoResult(IReadOnlyList<string> Files, Exception? Error);
+
 /// yt-dlp wrapper. Prefers a user-updated copy in the app data folder, then the bundled one
 /// (tools\ next to the executable), then whatever is on PATH.
 public static class VideoDownloader
@@ -155,6 +173,7 @@ public static class VideoDownloader
         if (line.StartsWith("[VideoRemuxer]", StringComparison.Ordinal) || line.StartsWith("[VideoConvertor]", StringComparison.Ordinal))
             return Loc.T("Converting container (ffmpeg)…");
         if (line.StartsWith("[ExtractAudio]", StringComparison.Ordinal)) return Loc.T("Extracting audio (ffmpeg)…");
+        if (line.StartsWith("[info] Writing video subtitles", StringComparison.Ordinal)) return Loc.T("Downloading subtitles…");
         if (line.StartsWith("MCFMT|", StringComparison.Ordinal))
         {
             var p = line.Split('|');
@@ -170,27 +189,49 @@ public static class VideoDownloader
         return null;
     }
 
+    private static readonly Regex playlistItem = new(@"^\[download\] Downloading item (\d+) of (\d+)", RegexOptions.CultureInvariant);
+
+    /// "[download] Downloading item 3 of 12" → (3, 12): yt-dlp moves on to the next video of a playlist.
+    public static (int Index, int Count)? PlaylistPosition(string line)
+    {
+        var m = playlistItem.Match(line);
+        return m.Success && int.TryParse(m.Groups[1].Value, out var n) && int.TryParse(m.Groups[2].Value, out var of) ? (n, of) : null;
+    }
+
     public static double? ParseNumber(string s) =>
         double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && !double.IsNaN(v) ? v : null;
 
     public static List<string> BuildArguments(Uri url, string outputDir, IEnumerable<string> formatArgs,
-        IReadOnlyDictionary<string, string> headers, string? cookieFile, string? ffmpeg, string? deno, string? qualityTag = null)
+        IReadOnlyDictionary<string, string> headers, string? cookieFile, string? ffmpeg, string? deno, VideoOptions? options = null)
     {
+        options ??= VideoOptions.None;
         // "Title [id] 720p.mp4" when the quality was picked for this download: without the tag a second
         // request for the same video in another quality would find "Title [id].mp4" and download nothing.
-        var tag = qualityTag != null && qualityTagPattern.IsMatch(qualityTag) ? " " + qualityTag : "";
+        var tag = !options.Playlist && options.QualityTag != null && qualityTagPattern.IsMatch(options.QualityTag) ? " " + options.QualityTag : "";
+        // A playlist gets its own folder and keeps the order of the list in the file names.
+        var template = options.Playlist
+            ? Path.Combine(outputDir, "%(playlist_title|Playlist).100B", "%(playlist_index)03d - %(title).150B [%(id)s].%(ext)s")
+            : Path.Combine(outputDir, $"%(title).150B [%(id)s]{tag}.%(ext)s");
         var args = new List<string>
         {
-            "--newline", "--no-playlist", "--no-colors", "--progress", "--no-simulate", "--no-mtime", "--no-quiet",
+            "--newline", options.Playlist ? "--yes-playlist" : "--no-playlist", "--no-colors", "--progress", "--no-simulate", "--no-mtime", "--no-quiet",
             "--encoding", "utf-8",
-            "-N", "4",
-            "-o", Path.Combine(outputDir, $"%(title).150B [%(id)s]{tag}.%(ext)s"),
+            // The limit counts per connection, so a limited download uses one.
+            "-N", options.LimitKb > 0 ? "1" : "4",
+            "-o", template,
             "--progress-template",
             "download:DMP|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.speed)s",
             "--print", "after_move:filepath",
             "--print", "before_dl:MCFMT|%(resolution)s|%(ext)s|%(vcodec)s|%(acodec)s|%(filesize_approx)s|%(format_id)s|%(duration)s",
         };
         args.AddRange(formatArgs);
+        if (options.LimitKb > 0) args.AddRange(["--limit-rate", options.LimitKb.ToString(CultureInfo.InvariantCulture) + "K"]);
+        if (!string.IsNullOrWhiteSpace(options.SubtitleLanguages))
+        {
+            // Side files (.srt) next to the video. --ignore-errors: without it a subtitle that cannot be
+            // fetched (YouTube often answers 429 for translated ones) would stop the video itself.
+            args.AddRange(["--write-subs", "--write-auto-subs", "--sub-langs", options.SubtitleLanguages.Trim(), "--convert-subs", "srt", "--ignore-errors"]);
+        }
         if (ffmpeg != null) args.AddRange(["--ffmpeg-location", ffmpeg]);
         if (headers.TryGetValue("User-Agent", out var ua) && ua.Length > 0) args.AddRange(["--user-agent", ua]);
         if (headers.TryGetValue("Referer", out var referer) && referer.Length > 0) args.AddRange(["--referer", referer]);
@@ -202,11 +243,11 @@ public static class VideoDownloader
         return args;
     }
 
-    /// Starts yt-dlp. `onProgress`/`onLine` arrive on reader threads; `onFinish` gets the final file path
-    /// (null when yt-dlp did not report one) or the error.
+    /// Starts yt-dlp. `onProgress`/`onLine` arrive on reader threads; `onFinish` gets the files yt-dlp
+    /// reported as finished and, when it did not end cleanly, the error.
     public static Process? Run(string executable, Uri url, string outputDir, IEnumerable<string> formatArgs,
         IReadOnlyDictionary<string, string> headers, string? cookieFile, bool useCookies,
-        Action<Progress> onProgress, Action<string> onLine, Action<string?, Exception?> onFinish, string? qualityTag = null)
+        Action<Progress> onProgress, Action<string> onLine, Action<VideoResult> onFinish, VideoOptions? options = null)
     {
         var merged = useCookies ? MergedCookieFile(cookieFile, url.Host) : null;
         var psi = new ProcessStartInfo(executable)
@@ -218,12 +259,12 @@ public static class VideoDownloader
             RedirectStandardInput = true,
             WorkingDirectory = outputDir,
         };
-        foreach (var a in BuildArguments(url, outputDir, formatArgs, headers, merged, LocateFfmpeg(), LocateDeno(), qualityTag))
+        foreach (var a in BuildArguments(url, outputDir, formatArgs, headers, merged, LocateFfmpeg(), LocateDeno(), options))
             psi.ArgumentList.Add(a);
         ApplyEnvironment(psi);
 
         var gate = new object();
-        string? finalPath = null;
+        var files = new List<string>();
         string? lastError = null;
 
         void Handle(string raw, bool isError)
@@ -241,7 +282,7 @@ public static class VideoDownloader
                 onProgress(new Progress(downloaded, total, Math.Max(0, ParseNumber(parts[4]) ?? 0)));
                 return;
             }
-            if (!isError && Path.IsPathFullyQualified(line) && File.Exists(line)) lock (gate) finalPath = line;
+            if (!isError && Path.IsPathFullyQualified(line) && File.Exists(line)) lock (gate) { if (!files.Contains(line)) files.Add(line); }
             if (isError && line.StartsWith("ERROR", StringComparison.Ordinal)) lock (gate) lastError = line;
             onLine(line);
         }
@@ -253,7 +294,7 @@ public static class VideoDownloader
         }
         catch (Exception e)
         {
-            onFinish(null, e);
+            onFinish(new VideoResult([], e));
             return null;
         }
         try { p.StandardInput.Close(); } catch { }
@@ -275,17 +316,17 @@ public static class VideoDownloader
             }
             catch (Exception e)
             {
-                onFinish(null, e);
+                onFinish(new VideoResult([], e));
                 return;
             }
             finally
             {
                 if (merged != null && merged != cookieFile && merged != SiteCookies.FilePath) try { File.Delete(merged); } catch { }
             }
-            string? path, err;
-            lock (gate) { path = finalPath; err = lastError; }
-            if (code == 0) onFinish(path, null);
-            else onFinish(null, new DownloadFailure(err ?? Loc.T("yt-dlp exited with code {0}", code)));
+            List<string> done;
+            string? err;
+            lock (gate) { done = [.. files]; err = lastError; }
+            onFinish(new VideoResult(done, code == 0 ? null : new DownloadFailure(err ?? Loc.T("yt-dlp exited with code {0}", code))));
         });
         return p;
     }

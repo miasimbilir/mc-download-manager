@@ -31,6 +31,7 @@ builder.SetupWithoutStarting();
 Console.WriteLine($"culture {culture}, default font {Avalonia.Media.FontManager.Current.DefaultFontFamily.Name}");
 var app = App.Instance;
 app.Settings.AutoStart = false;
+app.Settings.MaxConcurrent = 1;     // with two rows already "downloading" nothing in the list is ever really started
 app.Settings.ShowDetailOnStart = false;
 app.Settings.OnboardingDone = true;
 app.Settings.DownloadDirectory = @"C:\Users\Kullanıcı\Downloads\MC Download Manager";
@@ -45,7 +46,7 @@ DownloadItem Add(string url, DownloadKind kind, Action<DownloadItem> setup)
 
 const long MB = 1024 * 1024;
 Add("https://example.com/tatil-fotograflari.jpg", DownloadKind.file, i => { i.State = DownloadState.completed; i.TotalBytes = i.ReceivedBytes = 4 * MB; i.CreatedAt = DateTime.UtcNow.AddDays(-3); i.CompletedAt = i.CreatedAt; });
-Add("https://example.com/muzik-arsivi.zip", DownloadKind.file, i => { i.CreatedAt = DateTime.UtcNow.AddHours(-5); });
+var queued = Add("https://example.com/muzik-arsivi.zip", DownloadKind.file, i => { i.CreatedAt = DateTime.UtcNow.AddHours(-5); });
 Add("https://download.example.com/setup-x64.exe", DownloadKind.file, i => { i.State = DownloadState.failed; i.ErrorMessage = Loc.T("Server returned HTTP {0}", 403); i.CreatedAt = DateTime.UtcNow.AddHours(-3); });
 var paused = Add("https://static.media.example.com/TV_FOOTAGE_AMG_GLC_53_4MATIC_high_tech_silver_HD_PAL.mp4", DownloadKind.file, i =>
 {
@@ -103,11 +104,12 @@ foreach (var theme in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     if (theme == ThemeVariant.Dark) continue;
     Shot(new DetailWindow(app, video), "detail-video");
     Shot(new DetailWindow(app, paused), "detail-paused");
+    Shot(new DetailWindow(app, queued), "detail-queued");
     Shot(new DetailWindow(app, done), "detail-done");
     Shot(new AddDownloadWindow(app), "add");
     for (int tab = 0; tab < 4; tab++)
     {
-        var s = new SettingsWindow(app) { Height = tab is 0 or 3 ? 940 : 640 };
+        var s = new SettingsWindow(app) { Height = tab is 0 or 3 ? 1080 : 640 };
         s.SelectTab(tab);
         Shot(s, $"settings-{tab}");
     }
@@ -135,8 +137,40 @@ foreach (var theme in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     {
         using var listing = System.Text.Json.JsonDocument.Parse(File.ReadAllText(fixture));
         var parsed = VideoFormats.Parse(listing.RootElement, "mp4") with { Title = "Belgesel: Boğaz'ın iki yakası — 4. bölüm" };
-        Shot(new VideoFormatWindow(app.Settings, video, parsed), "quality");
+        Shot(new VideoFormatWindow(app.Store, video, parsed), "quality");
+        Shot(new VideoFormatWindow(app.Store, video, parsed with { Playlist = new PlaylistInfo("Boğaz'ın iki yakası — bütün bölümler", 12, false) }), "quality-playlist");
+        Shot(new VideoFormatWindow(app.Store, video, parsed with { Playlist = new PlaylistInfo("Boğaz'ın iki yakası — bütün bölümler", 12, true) }), "quality-playlist-only");
     }
+    // 2.0: the question before a browser download, the duplicate question, the countdown, the update window.
+    var asked = Add("https://releases.ubuntu.com/26.04/ubuntu-26.04-desktop-amd64.iso?token=abcdef0123456789", DownloadKind.file, i =>
+    {
+        i.AwaitingConfirmation = true; i.Probed = true; i.TotalBytes = 5912 * MB; i.FileName = "ubuntu-26.04-desktop-amd64.iso";
+    });
+    Shot(new DownloadAskWindow(app, asked), "ask");
+    asked.Probed = false; asked.TotalBytes = -1; asked.FileName = "download"; asked.Touch();
+    Shot(new DownloadAskWindow(app, asked), "ask-probing");
+    // The server's answer arrives while the question is open: the name box has to follow it (it once did
+    // not, because TextChanged for the window's own text arrives late and was taken for the user's typing).
+    var follows = new DownloadAskWindow(app, asked);
+    Shot(follows, "ask-after-probe", () => { asked.FileName = "rapor 2026.pdf"; asked.Probed = true; asked.TotalBytes = 3 * MB; asked.Touch(); });
+    var box = (TextBox)typeof(DownloadAskWindow).GetField("name", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(follows)!;
+    var edited = (bool)typeof(DownloadAskWindow).GetField("nameEdited", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(follows)!;
+    Console.WriteLine(box.Text == "rapor 2026.pdf" && !edited ? "CHECK ask window follows the probe: OK" : $"CHECK ask window follows the probe: FAILED (box \"{box.Text}\", edited {edited})");
+    app.Store.Remove(asked.Id);
+    Shot(PromptWindow.Create(Loc.T("This file was already downloaded"), done.FileName + "\n" + done.FinalPath + "\n" + Loc.T("Downloaded: {0}", Fmt.DateTimeShort(done.CompletedAt!.Value)),
+        [Loc.T("Open"), Loc.T("Show in Folder"), Loc.T("Download Again"), Loc.T("Cancel")], null, 3), "duplicate");
+    Shot(new CountdownWindow(QueueEndAction.Shutdown, 30), "countdown-shutdown");
+    Shot(new CountdownWindow(QueueEndAction.Sleep, 30), "countdown-sleep");
+    var release = new UpdateInfo("2.1.0", Updater.ReleasesUrl, "https://example.com/Setup.exe", new string('a', 64), 98 * MB,
+        "## Yenilikler\n- Zamanlanmış indirme: kuyruğu gece başlatın\n- Site başına bağlantı sayısı\n\n## Düzeltmeler\n- Çok uzun dosya adlarında ilerleme penceresi taşmıyor");
+    Shot(UpdateWindow.Create(app, release, canInstall: true), "update");
+    Shot(UpdateWindow.Create(app, release, canInstall: false), "update-zip");
+    // The status bar with a speed limit set and "shut down when done" chosen.
+    app.Settings.SpeedLimitEnabled = true;
+    app.Store.WhenDone = QueueEndAction.Shutdown;
+    Shot(new MainWindow(app), "main-limited");
+    app.Settings.SpeedLimitEnabled = false;
+    app.Store.WhenDone = QueueEndAction.None;
 }
 
 // An empty list

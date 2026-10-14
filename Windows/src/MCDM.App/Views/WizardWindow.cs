@@ -84,8 +84,10 @@ public sealed class WizardWindow : Window
     private bool IsLastStep => step >= StepCount - 1;
     private bool IsLastBrowser => browserIndex >= browsers.Count - 1;
     private bool Connected => app.Server.IsExtensionConnected(Browser.Id);
+    /// Connected, but still with the code of an earlier version of the extension.
+    private bool Outdated => Connected && app.Server.IsExtensionOutdated(Browser.Id);
 
-    private string Signature() => $"{browserIndex}/{step}/{BrowserIntegration.FilesPrepared(Browser)}/{Connected}/{copied}/{error}";
+    private string Signature() => $"{browserIndex}/{step}/{BrowserIntegration.FilesPrepared(Browser)}/{Connected}/{Outdated}/{copied}/{error}";
 
     private void Next()
     {
@@ -195,6 +197,8 @@ public sealed class WizardWindow : Window
                 body.Children.Add(Ui.Text(Loc.T("{0} is ready", b.Name), "section"));
                 body.Children.Add(Ui.Text(Loc.T("Pin MC Download Manager to the toolbar (puzzle icon ▸ pin). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.")));
                 body.Children.Add(Ui.StatusRow(Connected, Loc.T("Extension has connected to the app"), Loc.T("Waiting for the extension to connect (it connects right after loading)")));
+                if (Outdated)
+                    body.Children.Add(Ui.Text(Loc.T("{0} is still running an older version of the extension. Open its extensions page and click “Reload” (the round arrow) on the MC Download Manager card.", b.Name), "caption").Resource(TextBlock.ForegroundProperty, "WarnBrush"));
                 break;
         }
         if (error != null) body.Children.Add(Ui.Text(error, "caption", "error"));
@@ -207,6 +211,8 @@ public sealed class WizardWindow : Window
             body.Children.Add(Ui.Text(Loc.T("{0} is ready", b.Name), "section"));
             body.Children.Add(Ui.Text(Loc.T("Pin MC Download Manager to the toolbar (puzzle icon ▸ pin). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.")));
             body.Children.Add(Ui.StatusRow(Connected, Loc.T("Extension has connected to the app"), Loc.T("Waiting for the extension to connect (it connects right after loading)")));
+            if (Outdated)
+                body.Children.Add(Ui.Text(Loc.T("Firefox is still running an older version of the add-on. Go back one step and add it again."), "caption").Resource(TextBlock.ForegroundProperty, "WarnBrush"));
             return;
         }
         if (BrowserIntegration.FirefoxAddon is not { } xpi)

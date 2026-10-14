@@ -53,12 +53,19 @@
                 <TextBlock x:Name="ConcurrentLabel" VerticalAlignment="Center" />
                 <Slider Grid.Column="1" x:Name="ConcurrentSlider" Minimum="1" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True" />
               </Grid>
+              <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,4,0,0">
+                <CheckBox IsChecked="{Binding SpeedLimitEnabled}" Content="{l:T 'Limit the download speed to'}" />
+                <NumericUpDown x:Name="SpeedLimitBox" Minimum="16" Maximum="1000000" Increment="256" FormatString="0" Width="150" VerticalAlignment="Center" />
+                <TextBlock x:Name="SpeedLimitUnit" VerticalAlignment="Center" />
+              </StackPanel>
+              <TextBlock Classes="caption" Text="{l:T 'File downloads share this limit between them; each video download is held to it on its own. 1024 KB is 1 MB. The limit can also be switched from the tray icon and the status bar. A video that is already downloading keeps its speed until it is paused and resumed.'}" />
             </StackPanel>
           </Border>
 
           <Border Classes="card">
             <StackPanel Spacing="2">
               <TextBlock Classes="section" Text="{l:T 'Behaviour'}" />
+              <CheckBox IsChecked="{Binding AskBeforeDownload}" Content="{l:T 'Ask before a file from the browser is downloaded (name, size, where to save)'}" />
               <CheckBox IsChecked="{Binding AutoStart}" Content="{l:T 'Start new downloads immediately'}" />
               <CheckBox IsChecked="{Binding NotifyOnComplete}" Content="{l:T 'Show a notification when a download completes'}" />
               <CheckBox IsChecked="{Binding ShowDetailOnStart}" Content="{l:T 'Open the download window when a download starts'}" />
@@ -79,13 +86,23 @@
           </Border>
 
           <Border Classes="card">
-            <Grid ColumnDefinitions="*,Auto">
-              <StackPanel Spacing="3">
-                <TextBlock x:Name="VersionText" />
-                <TextBlock Classes="caption" Text="{l:T 'Windows port of the open-source macOS app by Mesut Çevik (MIT License).'}" />
-              </StackPanel>
-              <Button Grid.Column="1" x:Name="ProjectPage" Content="{l:T 'Project Page'}" VerticalAlignment="Center" />
-            </Grid>
+            <StackPanel>
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="3">
+                  <TextBlock x:Name="VersionText" />
+                  <TextBlock Classes="caption" Text="{l:T 'Windows port of the open-source macOS app by Mesut Çevik (MIT License).'}" />
+                </StackPanel>
+                <Button Grid.Column="1" x:Name="ProjectPage" Content="{l:T 'Project Page'}" VerticalAlignment="Center" />
+              </Grid>
+              <Border Height="1" Background="{DynamicResource LineBrush}" Margin="0,4" />
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="1" VerticalAlignment="Center">
+                  <CheckBox IsChecked="{Binding CheckForUpdates}" Content="{l:T 'Check for updates automatically (GitHub Releases)'}" />
+                  <TextBlock x:Name="UpdateStatus" Classes="caption" IsVisible="False" />
+                </StackPanel>
+                <Button Grid.Column="1" x:Name="CheckUpdates" Content="{l:T 'Check Now'}" VerticalAlignment="Center" Margin="8,0,0,0" />
+              </Grid>
+            </StackPanel>
           </Border>
         </StackPanel>
       </ScrollViewer>
@@ -201,6 +218,11 @@
               <TextBlock Classes="section" Text="{l:T 'Default format'}" />
               <CheckBox IsChecked="{Binding AskVideoQuality}" Content="{l:T 'Ask for the quality before each video download'}" />
               <TextBlock Classes="caption" Text="{l:T 'Lists the resolutions the video really offers, with their sizes, and audio only (MP3 / M4A). Works wherever yt-dlp does: YouTube, X, Instagram and others. When it is off, the choices below apply.'}" Margin="0,0,0,6" />
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <CheckBox IsChecked="{Binding VideoSubtitles}" Content="{l:T 'Download subtitles too, in these languages:'}" />
+                <TextBox Text="{Binding SubtitleLanguages, UpdateSourceTrigger=LostFocus}" Width="140" VerticalAlignment="Center" />
+              </StackPanel>
+              <TextBlock Classes="caption" Text="{l:T 'Language codes separated by commas (tr,en). Subtitles are saved next to the video as .srt files; where a video has none of its own, the site’s automatic captions are used. The quality question has the same switch.'}" Margin="0,0,0,6" />
               <Grid ColumnDefinitions="200,*" RowDefinitions="Auto,Auto" RowSpacing="8">
                 <TextBlock Text="{l:T 'Container'}" VerticalAlignment="Center" />
                 <ComboBox Grid.Column="1" x:Name="ContainerBox" HorizontalAlignment="Stretch" />

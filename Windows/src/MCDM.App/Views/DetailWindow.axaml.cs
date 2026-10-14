@@ -28,7 +28,9 @@ public partial class DetailWindow : Window
         ToggleDetails.Click += (_, _) => { showDetails = !showDetails; Refresh(); };
         PrimaryButton.Click += (_, _) =>
         {
-            if (item.State is DownloadState.downloading or DownloadState.probing or DownloadState.queued) app.Store.Pause(item.Id);
+            // Not started yet (waiting for a free slot, or added with "start immediately" off): start it now.
+            if (item.State == DownloadState.queued) app.Store.StartNow(item.Id);
+            else if (item.State is DownloadState.downloading or DownloadState.probing) app.Store.Pause(item.Id);
             else app.Store.Resume(item.Id);
         };
         SecondaryButton.Click += (_, _) =>
@@ -98,8 +100,9 @@ public partial class DetailWindow : Window
 
         ToggleDetails.Content = showDetails ? Loc.T("<< Hide Details") : Loc.T("Show Details >>");
         var running = item.State is DownloadState.downloading or DownloadState.probing or DownloadState.queued;
-        PrimaryButton.Content = running ? Loc.T("Pause") : Loc.T("Resume");
-        PrimaryButton.Classes.Set("accent", !running);
+        var waiting = item.State == DownloadState.queued;
+        PrimaryButton.Content = waiting ? Loc.T("Download") : running ? Loc.T("Pause") : Loc.T("Resume");
+        PrimaryButton.Classes.Set("accent", !running || waiting);
         SecondaryButton.Content = running ? Loc.T("Cancel") : Loc.T("Remove from List");
 
         DetailsPanel.IsVisible = showDetails;
@@ -158,9 +161,11 @@ public partial class DetailWindow : Window
 
     private void RefreshCompleted()
     {
-        DoneName.Text = item.FileName;
+        DoneName.Text = string.IsNullOrEmpty(item.Note) ? item.FileName : item.FileName + " — " + item.Note;
         DoneSize.Text = Fmt.Size(item.TotalBytes);
-        var location = item.FinalPath != null ? Path.GetDirectoryName(item.FinalPath) ?? "" : app.Store.DestinationDirectory(item);
+        // A playlist's "file" is the folder its videos are in.
+        var location = item.FinalPath == null ? app.Store.DestinationDirectory(item)
+            : Directory.Exists(item.FinalPath) ? item.FinalPath : Path.GetDirectoryName(item.FinalPath) ?? "";
         DoneLocation.Text = location;
         ToolTip.SetTip(DoneLocation, location);
         DoneUrl.Text = item.Url;

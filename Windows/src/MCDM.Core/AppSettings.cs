@@ -29,6 +29,14 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool denoPromptSuppressed;
     private bool askVideoQuality = true;
     private List<string> chromiumExtensionIds = [];
+    private bool askBeforeDownload = true;
+    private bool speedLimitEnabled;
+    private int speedLimitKb = 1024;
+    private bool videoSubtitles;
+    private string subtitleLanguages = DefaultSubtitleLanguages;
+    private bool checkForUpdates = true;
+    private string skippedVersion = "";
+    private DateTime lastUpdateCheck;
 
     public int SegmentCount { get => segmentCount; set => Set(ref segmentCount, Math.Clamp(value, 1, 16)); }
     public int MaxConcurrent { get => maxConcurrent; set => Set(ref maxConcurrent, Math.Clamp(value, 1, 10)); }
@@ -57,6 +65,36 @@ public sealed class AppSettings : INotifyPropertyChanged
 
     /// Ids of the Chromium extensions that have talked to the bridge; they may call the native host that starts the app.
     public List<string> ChromiumExtensionIds { get => chromiumExtensionIds; set => Set(ref chromiumExtensionIds, value ?? []); }
+
+    /// A file handed over by the browser is shown first (name, size, where it goes) and starts when the user says so.
+    public bool AskBeforeDownload { get => askBeforeDownload; set => Set(ref askBeforeDownload, value); }
+
+    /// One budget shared by every connection of every download, in KB/s.
+    public bool SpeedLimitEnabled { get => speedLimitEnabled; set => Set(ref speedLimitEnabled, value); }
+    public int SpeedLimitKb { get => speedLimitKb; set => Set(ref speedLimitKb, Math.Clamp(value, MinSpeedLimitKb, MaxSpeedLimitKb)); }
+    public const int MinSpeedLimitKb = 16, MaxSpeedLimitKb = 1_000_000;
+    /// 0 = no limit.
+    [JsonIgnore] public long SpeedLimitBytes => speedLimitEnabled ? speedLimitKb * 1024L : 0;
+
+    /// Subtitles are saved next to a video as .srt files; the quality question remembers the last choice here.
+    public bool VideoSubtitles { get => videoSubtitles; set => Set(ref videoSubtitles, value); }
+    /// yt-dlp language list ("tr,en").
+    public string SubtitleLanguages { get => subtitleLanguages; set => Set(ref subtitleLanguages, CleanLanguages(value)); }
+    public const string DefaultSubtitleLanguages = "tr,en";
+
+    /// Letters, digits and the few signs yt-dlp's language patterns use; anything else is dropped.
+    internal static string CleanLanguages(string? value)
+    {
+        var parts = (value ?? "").Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(p => new string([.. p.Where(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or '*')]).TrimStart('-'))
+            .Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList();
+        return parts.Count == 0 ? DefaultSubtitleLanguages : string.Join(",", parts);
+    }
+
+    public bool CheckForUpdates { get => checkForUpdates; set => Set(ref checkForUpdates, value); }
+    /// "Skip This Version": this release is not offered again (a later one is).
+    public string SkippedVersion { get => skippedVersion; set => Set(ref skippedVersion, value ?? ""); }
+    public DateTime LastUpdateCheck { get => lastUpdateCheck; set => Set(ref lastUpdateCheck, value); }
 
     /// All file extensions (lowercase, no dot) the app should capture.
     [JsonIgnore] public List<string> CaptureExtensions => CaptureTypes.Extensions(captureGroupIds, customExtensions);

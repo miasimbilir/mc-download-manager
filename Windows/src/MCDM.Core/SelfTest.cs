@@ -116,6 +116,27 @@ public static class SelfTest
             return "deleted";
         });
 
+        Check("Speed limit (2 MB/s, loopback)", () =>
+        {
+            var part = Path.Combine(work, ".dm-limit.part");
+            RateLimiter.BytesPerSecond = 2 * 1024 * 1024;
+            try
+            {
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                Fetch(origin.Url, part, 4, out _);
+                var seconds = clock.Elapsed.TotalSeconds;
+                var size = new FileInfo(part).Length;
+                // Unlimited, the same download takes a few hundredths of a second.
+                if (seconds < size / (2.0 * 1024 * 1024) * 0.7) throw new Exception($"{Fmt.Size(size)} arrived in {seconds:0.00} s — not limited");
+                return $"{Fmt.Size(size)} in {seconds:0.0} s ({Fmt.Speed(size / seconds)})";
+            }
+            finally
+            {
+                RateLimiter.BytesPerSecond = 0;
+                try { File.Delete(part); } catch { }
+            }
+        });
+
         Check("Recycle Bin", () =>
         {
             var f = Path.Combine(work, "recycle-me.txt");
@@ -151,6 +172,10 @@ public static class SelfTest
         Info("Extension files", () => File.Exists(Path.Combine(BrowserIntegration.BundledExtensionFolder, "manifest.json"))
             ? $"{BrowserIntegration.BundledExtensionFolder} (v{BrowserIntegration.BundledVersion})" : $"MISSING at {BrowserIntegration.BundledExtensionFolder}");
         Info("Native messaging host", NativeHostRegistry.Describe);
+        Info("Installed with the installer", () => Updater.InstalledByInstaller ? "yes (updates install themselves)" : "no (updates open the download page)");
+        Info("Update check", () => Updater.CheckAsync().GetAwaiter().GetResult() is { } u
+            ? $"{u.Version} is available ({(u.CanInstall ? "installer with checksum" : "no verifiable installer")})"
+            : "up to date");
         Info("Firefox add-on", () => BrowserIntegration.FirefoxAddon ?? "not included (FirefoxExtension.xpi next to the executable)");
 
         foreach (var (tool, path) in new[] { ("yt-dlp", VideoDownloader.LocateYtDlp("")), ("ffmpeg", VideoDownloader.LocateFfmpeg()), ("deno", VideoDownloader.LocateDeno()) })

@@ -14,7 +14,15 @@ public sealed record VideoChoice(int Height, int Nominal, bool HighFrameRate, lo
     public string Label => Nominal + "p" + (HighFrameRate ? " · 60 fps" : "");
 }
 
-public sealed record VideoInfo(string Title, double? Duration, List<VideoChoice> Choices, bool HasAudio, long? AudioBytes);
+public sealed record VideoInfo(string Title, double? Duration, List<VideoChoice> Choices, bool HasAudio, long? AudioBytes)
+{
+    /// Set when the address also (or only) names a playlist.
+    public PlaylistInfo? Playlist { get; init; }
+}
+
+/// The playlist behind an address. `Only`: the address names nothing but the list
+/// (youtube.com/playlist?list=…), as opposed to one video opened from a list (watch?v=…&list=…).
+public sealed record PlaylistInfo(string Title, int Count, bool Only);
 
 /// What the user picked. `MaxHeight`: a pixel height cap, -1 = audio only (M4A), -2 = audio only (MP3),
 /// or `UseDefault` to go with Settings. `Nominal` is what "always use this" stores in Settings.
@@ -22,6 +30,13 @@ public sealed record VideoFormatAnswer(int MaxHeight, int Nominal, bool Remember
 {
     public const int UseDefault = int.MinValue;
     public static VideoFormatAnswer Default { get; } = new(UseDefault, UseDefault, false);
+
+    /// A folder picked for this download; null = the usual place.
+    public string? Directory { get; init; }
+    /// Also fetch subtitles; null = as in Settings.
+    public bool? Subtitles { get; init; }
+    /// Download the whole playlist, not just the one video.
+    public bool Playlist { get; init; }
 
     /// "Not above my target; if nothing is that small, the smallest there is" — the rule the default
     /// selection follows (`target` as in Settings: 0 = best).
@@ -35,21 +50,82 @@ public sealed record VideoFormatAnswer(int MaxHeight, int Nominal, bool Remember
 
 public static class VideoFormats
 {
-    /// Asks yt-dlp which formats the page offers (`yt-dlp -J`), without downloading anything.
+    /// Asks yt-dlp which formats the page offers (`yt-dlp -J`), without downloading anything. When the
+    /// address belongs to a playlist, the list's title and length are fetched alongside.
     public static async Task<(VideoInfo? Info, string? Error)> ProbeAsync(string executable, Uri url,
         IReadOnlyDictionary<string, string> headers, string? cookieFile, bool useCookies, string container, CancellationToken ct)
     {
         var merged = useCookies ? VideoDownloader.MergedCookieFile(cookieFile, url.Host) : null;
+        try
+        {
+            var kind = Links.Playlist(url);
+            var listing = kind == PlaylistKind.None
+                ? Task.FromResult<PlaylistInfo?>(null)
+                : ProbePlaylistAsync(executable, url, headers, merged, kind == PlaylistKind.Only, ct);
+            // "-I 1": for an address that is only a playlist, look at its first video instead of all of them.
+            var (json, error) = await RunJsonAsync(executable, ["-J", "--no-playlist", "-I", "1"], url, headers, merged, ct).ConfigureAwait(false);
+            var playlist = await listing.ConfigureAwait(false);
+            if (json == null) return (null, error);
+            using var doc = JsonDocument.Parse(json);
+            var (info, parts) = ParseDetailed(doc.RootElement, container);
+            info = await MeasureAsync(doc.RootElement, info, parts, ct).ConfigureAwait(false);
+            return (info with { Playlist = playlist }, null);
+        }
+        catch (OperationCanceledException)
+        {
+            return (null, ct.IsCancellationRequested ? "cancelled" : Loc.T("The server did not respond in time"));
+        }
+        catch (Exception e)
+        {
+            return (null, e.Message);
+        }
+        finally
+        {
+            if (merged != null && merged != cookieFile && merged != SiteCookies.FilePath) try { File.Delete(merged); } catch { }
+        }
+    }
+
+    /// Title and length of a playlist (`--flat-playlist`: the videos themselves are not looked at).
+    /// null when the address turns out not to be one, or the listing fails; the single video still works then.
+    private static async Task<PlaylistInfo?> ProbePlaylistAsync(string executable, Uri url, IReadOnlyDictionary<string, string> headers,
+        string? cookies, bool only, CancellationToken ct)
+    {
+        try
+        {
+            var (json, _) = await RunJsonAsync(executable, ["-J", "--flat-playlist", "--yes-playlist"], url, headers, cookies, ct).ConfigureAwait(false);
+            if (json == null) return null;
+            using var doc = JsonDocument.Parse(json);
+            return ParsePlaylist(doc.RootElement, only);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static PlaylistInfo? ParsePlaylist(JsonElement root, bool only)
+    {
+        if (Str(root, "_type") != "playlist") return null;
+        var entries = root.TryGetProperty("entries", out var e) && e.ValueKind == JsonValueKind.Array ? e.GetArrayLength() : 0;
+        var count = (int)(Num(root, "playlist_count") ?? entries);
+        if (count <= 0) count = entries;
+        return count > 0 ? new PlaylistInfo(Str(root, "title") ?? "", count, only) : null;
+    }
+
+    /// Runs yt-dlp for a JSON answer. Returns the JSON, or null and the reason.
+    private static async Task<(string? Json, string? Error)> RunJsonAsync(string executable, string[] mode, Uri url,
+        IReadOnlyDictionary<string, string> headers, string? cookies, CancellationToken ct)
+    {
         var psi = new ProcessStartInfo(executable)
         {
             UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true,
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
         };
-        var args = new List<string> { "-J", "--no-playlist", "--no-warnings", "--encoding", "utf-8" };
+        var args = new List<string>(mode) { "--no-warnings", "--encoding", "utf-8" };
         if (headers.TryGetValue("User-Agent", out var ua) && ua.Length > 0) args.AddRange(["--user-agent", ua]);
         if (headers.TryGetValue("Referer", out var referer) && referer.Length > 0) args.AddRange(["--referer", referer]);
-        if (merged != null) args.AddRange(["--cookies", merged]);
+        if (cookies != null) args.AddRange(["--cookies", cookies]);
         if (VideoDownloader.LocateDeno() is { } deno) args.AddRange(["--js-runtimes", "deno:" + deno]);
         args.Add("--");
         args.Add(url.AbsoluteUri);
@@ -74,24 +150,16 @@ public static class VideoFormats
                 var line = err.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.StartsWith("ERROR", StringComparison.Ordinal));
                 return (null, line ?? Loc.T("yt-dlp exited with code {0}", p.ExitCode));
             }
-            using var doc = JsonDocument.Parse(json);
-            var (info, parts) = ParseDetailed(doc.RootElement, container);
-            return (await MeasureAsync(doc.RootElement, info, parts, ct).ConfigureAwait(false), null);
+            return (json, null);
         }
-        catch (OperationCanceledException)
+        catch
         {
             VideoDownloader.Kill(p);
-            return (null, ct.IsCancellationRequested ? "cancelled" : Loc.T("The server did not respond in time"));
-        }
-        catch (Exception e)
-        {
-            VideoDownloader.Kill(p);
-            return (null, e.Message);
+            throw;
         }
         finally
         {
             p?.Dispose();
-            if (merged != null && merged != cookieFile && merged != SiteCookies.FilePath) try { File.Delete(merged); } catch { }
         }
     }
 

@@ -254,7 +254,7 @@ public class MiscTests
     [Fact]
     public void The_quality_tag_reaches_the_output_name_only_in_its_expected_form()
     {
-        string Template(string? tag) => VideoDownloader.BuildArguments(new Uri("https://v.example/1"), "out", [], new Dictionary<string, string>(), null, null, null, tag)
+        string Template(string? tag) => VideoDownloader.BuildArguments(new Uri("https://v.example/1"), "out", [], new Dictionary<string, string>(), null, null, null, new VideoOptions { QualityTag = tag })
             is var a ? Path.GetFileName(a[a.IndexOf("-o") + 1]) : "";
         Assert.Equal("%(title).150B [%(id)s] 1080p.%(ext)s", Template("1080p"));
         Assert.Equal("%(title).150B [%(id)s].%(ext)s", Template(null));

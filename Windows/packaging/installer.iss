@@ -1,6 +1,6 @@
 ﻿; Inno Setup 6 script for the Windows installer (MC-Download-Manager-<version>-Setup.exe).
 ; Built by scripts\build.ps1 when ISCC.exe is available:
-;   ISCC /DAppVersion=1.3.0 "/DStage=<...>\build\MC Download Manager" "/DOut=<...>\build" installer.iss
+;   ISCC /DAppVersion=2.0.0 "/DStage=<...>\build\MC Download Manager" "/DOut=<...>\build" installer.iss
 ; Keep the UTF-8 BOM: the Turkish messages below need it.
 ;
 ; Per-user install (no administrator rights, no UAC prompt) into %LOCALAPPDATA%\Programs\MC Download Manager,
@@ -27,8 +27,10 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=MC Download Manager contributors
-AppPublisherURL=https://github.com/mstcvk/mc-download-manager
-AppSupportURL=https://github.com/mstcvk/mc-download-manager
+; The Windows app's own home: releases, issues and the update check all live there.
+AppPublisherURL=https://github.com/miasimbilir/mc-download-manager
+AppSupportURL=https://github.com/miasimbilir/mc-download-manager/issues
+AppUpdatesURL=https://github.com/miasimbilir/mc-download-manager/releases
 VersionInfoVersion={#AppVersion}
 DefaultDirName={autopf}\{#AppName}
 DisableProgramGroupPage=yes
@@ -79,7 +81,9 @@ Type: dirifempty; Name: "{app}"
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 ; A silent upgrade (winget upgrade) puts a running app back where it was: in the notification area.
-Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait; Check: RestartAfterSilentUpgrade
+Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait; Check: RestartHidden
+; An update the user started from inside the app (Setup.exe /SILENT /SHOWAPP=1) ends with the new version on screen.
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: RestartVisible
 
 [Code]
 const
@@ -132,9 +136,19 @@ begin
   Result := '';
 end;
 
-function RestartAfterSilentUpgrade(): Boolean;
+function ShowAfterUpgrade(): Boolean;
 begin
-  Result := WizardSilent() and WasRunning;
+  Result := ExpandConstant('{param:SHOWAPP|0}') = '1';
+end;
+
+function RestartHidden(): Boolean;
+begin
+  Result := WizardSilent() and WasRunning and not ShowAfterUpgrade();
+end;
+
+function RestartVisible(): Boolean;
+begin
+  Result := WizardSilent() and ShowAfterUpgrade();
 end;
 
 function InitializeUninstall(): Boolean;

@@ -3,37 +3,57 @@ MC Download Manager — Windows
 
 Install
 -------
+Installed with the installer (Setup.exe)? Then there is nothing to do: the app is in the Start menu.
+
+Unpacked from the zip:
 1. Move this folder somewhere permanent (Documents, C:\Programs, …). Keep its contents together:
    MCDownloadManager.exe, tools, ChromeExtension, FirefoxExtension.xpi.
 2. Double-click MCDownloadManager.exe.
    If Windows shows "Windows protected your PC": "More info" > "Run anyway".
    (The app is not code-signed; the source is open.)
-3. On first launch choose the file types to capture; the wizard then walks you through
-   installing the browser extension (Chrome, Edge, Brave, Opera, Firefox).
+
+On first launch choose the file types to capture; the wizard then walks you through
+installing the browser extension (Chrome, Edge, Brave, Opera, Firefox).
 
 Use
 ---
-- Start a download in the browser; the app takes it over and fetches the file in 8 parts.
+- Start a download in the browser; the app takes it over and asks first: the file's name, its size and
+  where it will be saved. "Download" fetches it in 8 parts; "Download Later" keeps it in the list.
+  Tick "Don't ask again" in that window to skip the question (Settings > General turns it back on).
 - "Download video from this page" in the extension popup downloads from YouTube, X, Instagram and
   similar sites. Before it starts, the app asks for the quality (1080p, 720p, 360p… or audio only: MP3).
+  The same window offers subtitles and, when the address belongs to a playlist, the whole playlist.
   On the first YouTube download the app offers to install a helper called "deno"; accept it.
+- Speed limit: click "Speed limit" at the bottom of the main window, or right-click the icon next to the
+  clock and pick the line of that name. Its value is set in Settings > General.
+- "When done": at the bottom of the main window you can have the computer sleep or shut down after the
+  last download. A 30-second countdown comes first; "Cancel" calls it off.
 - Even after you quit the app, starting a download in the browser makes the extension open it again.
 - Closing the window does not quit; the app stays in the notification area next to the clock.
   Right-click its icon and choose "Quit" to exit.
 - Files go to: Downloads\MC Download Manager
 
+Updates
+-------
+The app tells you when a new version is out (by hand: Settings > General > "Check Now"). A copy installed
+with the installer updates itself with "Update Now"; a copy from the zip opens the download page.
+If Settings > Browser Extensions says "Old version" for a browser after an update, click "Reload" on the
+MC Download Manager card of that browser's extensions page.
+
 Troubleshooting
 ---------------
-- Shift + right-click an empty spot in this folder > "Open PowerShell window here", then:
-      .\MCDownloadManager.exe --selftest
+- Open "PowerShell" from the Start menu and run (for a zip copy, from the exe's own folder):
+      & "$env:LOCALAPPDATA\Programs\MC Download Manager\MCDownloadManager.exe" --selftest
   The report is written to:  %APPDATA%\MC Download Manager\selftest.txt
 - If the app closes unexpectedly:  %APPDATA%\MC Download Manager\crash.log
 
 Uninstall
 ---------
-Turn off Settings > General > "Start when I sign in to Windows", quit the app, delete the folder and the
-"MC Download Manager" entry in the Start menu.
+Installed with the installer: Windows Settings > Apps > MC Download Manager > Uninstall.
+Zip copy: turn off Settings > General > "Start when I sign in to Windows", quit the app, delete the folder
+and the "MC Download Manager" entry in the Start menu.
 Settings and the download list live in %APPDATA%\MC Download Manager.
 
-Source: https://github.com/mstcvk/mc-download-manager  (original macOS app: Mesut Çevik, MIT)
+Windows version: https://github.com/miasimbilir/mc-download-manager
+Original macOS app: Mesut Çevik — https://github.com/mstcvk/mc-download-manager (MIT)
 Bundled tools: yt-dlp (Unlicense), FFmpeg (GPL, tools\ffmpeg-LICENSE.txt)

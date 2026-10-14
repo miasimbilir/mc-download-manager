@@ -147,10 +147,21 @@ public sealed class ServerController : INotifyPropertyChanged
     public bool IsExtensionConnected(string browser, double withinSeconds = 120) =>
         extensionConnections.TryGetValue(browser, out var d) && (DateTime.UtcNow - d).TotalSeconds < withinSeconds;
 
+    /// Browsers whose extension last spoke without the header every extension has sent since 1.3.0
+    /// (X-MCDM-Extension-Id): an older copy is still loaded there. The files on disk may well be current —
+    /// a Chromium browser keeps running the old code until “Reload” is clicked on its extensions page.
+    private readonly HashSet<string> outdatedExtensions = new(StringComparer.Ordinal);
+
+    public bool IsExtensionOutdated(string browser) => outdatedExtensions.Contains(browser);
+
     private LocalServer? server;
     private readonly DownloadStore store;
     private readonly AppSettings settings;
-    private Timer? restart;
+    private Timer? restart, retry;
+    private bool stopped;
+
+    /// How long to wait before trying a busy port again.
+    public static TimeSpan RetryInterval { get; set; } = TimeSpan.FromSeconds(5);
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -172,7 +183,13 @@ public sealed class ServerController : INotifyPropertyChanged
 
     public void Start()
     {
+        retry?.Dispose();
+        retry = null;
+        if (stopped) return;
         server?.Stop();
+        server = null;
+        var wasRunning = Running;
+        var before = StatusText;
         Running = false;
         var port = Port;
         var s = new LocalServer(port, req => MainThread.Run(() => Handle(req)), OriginAllowed);
@@ -191,11 +208,17 @@ public sealed class ServerController : INotifyPropertyChanged
         {
             StatusText = Loc.T("Could not start: {0}", e.Message);
         }
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        // Whatever holds the port (another program, a copy of the app that is just closing) may let go
+        // of it; without the bridge the extensions cannot reach the app, so keep trying.
+        if (!Running) retry = new Timer(_ => MainThread.Post(() => { if (!Running) Start(); }), null, RetryInterval, Timeout.InfiniteTimeSpan);
+        if (Running != wasRunning || StatusText != before) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 
     public void Stop()
     {
+        stopped = true;
+        retry?.Dispose();
+        restart?.Dispose();
         server?.Stop();
         server = null;
         Running = false;
@@ -230,7 +253,9 @@ public sealed class ServerController : INotifyPropertyChanged
         if (NativeHostRegistry.NoteExtensionId(settings, extensionId)) Task.Run(() => NativeHostRegistry.Register(settings));
         var first = !IsExtensionConnected(browser);
         extensionConnections[browser] = DateTime.UtcNow;
-        if (first) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        var outdated = !req.Headers.ContainsKey("x-mcdm-extension-id");
+        var changed = outdated ? outdatedExtensions.Add(browser) : outdatedExtensions.Remove(browser);
+        if (first || changed) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 
     /// Only browser extensions may talk to the bridge. Requests without an Origin, with an empty Origin or
@@ -325,6 +350,7 @@ public sealed class ServerController : INotifyPropertyChanged
                     UserAgent = Str(obj, "userAgent"),
                     CookieHeader = Str(obj, "cookieHeader"),
                     Kind = Str(obj, "kind") == "video" ? DownloadKind.video : DownloadKind.file,
+                    Confirm = true,
                 };
                 if (obj.TryGetProperty("cookies", out var cookies) && cookies.ValueKind == JsonValueKind.Array)
                 {

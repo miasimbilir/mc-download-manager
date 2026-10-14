@@ -7,26 +7,29 @@ namespace MCDM.Tests;
 
 public class StoreTests
 {
-    private const int TestPort = 48931;
+    internal const int TestPort = 48931;
 
-    private sealed class Rig : IDisposable
+    internal sealed class Rig : IDisposable
     {
         public readonly string Dir = Setup.TempDir();
         public AppSettings Settings;
         public DownloadStore Store = null!;
         public string StoreFile => Path.Combine(Dir, "downloads.json");
+        private readonly IStoreUi ui;
 
-        public Rig(Action<AppSettings>? configure = null)
+        public Rig(Action<AppSettings>? configure = null, IStoreUi? ui = null)
         {
+            this.ui = ui ?? new NoUi();
             Settings = AppSettings.Load(Path.Combine(Dir, "settings.json"));
             Settings.DownloadDirectory = Path.Combine(Dir, "dl");
             Settings.ShowDetailOnStart = false;
+            Settings.AskBeforeDownload = false;  // the question has its own tests (AskTests)
             Settings.ServerPort = TestPort;      // not 48213: a running copy of the app and real browser extensions use that
             configure?.Invoke(Settings);
             Open();
         }
 
-        public void Open() => Store = MainThread.Run(() => new DownloadStore(Settings, StoreFile)).Result;
+        public void Open() => Store = MainThread.Run(() => new DownloadStore(Settings, StoreFile) { Ui = ui }).Result;
         public T On<T>(Func<DownloadStore, T> f) => MainThread.Run(() => f(Store)).Result;
         public void On(Action<DownloadStore> f) => MainThread.Run(() => f(Store)).Wait();
         public DownloadItem Add(string url, DownloadKind kind = DownloadKind.file, string? name = null) =>
@@ -181,7 +184,7 @@ public class StoreTests
 
     // ---- Bridge ----
 
-    private static HttpRequest Req(string method, string path, object? body = null, string? origin = "chrome-extension://abcdefghijklmnop", string host = "127.0.0.1:48931", string? ext = null)
+    internal static HttpRequest Req(string method, string path, object? body = null, string? origin = "chrome-extension://abcdefghijklmnop", string host = "127.0.0.1:48931", string? ext = null)
     {
         var headers = new Dictionary<string, string> { ["host"] = host };
         if (origin != null) headers["origin"] = origin;
@@ -328,11 +331,24 @@ public class StoreTests
             Assert.Equal(Path.Combine(rig.Settings.DownloadDirectory, "Archives", "paket.zip"), item.FinalPath);
             Assert.Equal(origin.Data, File.ReadAllBytes(item.FinalPath!));
 
-            // A second instance on the same port reports the conflict instead of crashing.
+            // A second instance on the same port reports the conflict instead of crashing…
+            ServerController.RetryInterval = TimeSpan.FromMilliseconds(150);
             var clash = new ServerController(rig.Store, rig.Settings);
-            Assert.False(clash.Running);
-            Assert.Contains("48931", clash.StatusText);
+            try
+            {
+                Assert.False(clash.Running);
+                Assert.Contains("48931", clash.StatusText);
+                // …and takes the port over by itself once it is free.
+                server.Stop();
+                await Setup.Until(() => clash.Running, 5, "the bridge to start once the port is free");
+                Assert.Equal(403, (int)(await http.GetAsync("http://127.0.0.1:48931/ping")).StatusCode);
+            }
+            finally { clash.Stop(); }
         }
-        finally { server.Stop(); }
+        finally
+        {
+            server.Stop();
+            ServerController.RetryInterval = TimeSpan.FromSeconds(5);
+        }
     }
 }

@@ -5,8 +5,9 @@ namespace MCDM;
 public static class AppInfo
 {
     public const string Name = "MC Download Manager";
-    /// Kept in step with the macOS app and the extension manifest; the extension popup shows it.
-    public const string Version = "1.3.0";
+    /// The Windows app's own version (its own line since 2.0; up to 1.3.0 it followed the macOS app).
+    /// The extension popup shows it.
+    public const string Version = "2.0.0";
     public const int DefaultPort = 48213;
 }
 

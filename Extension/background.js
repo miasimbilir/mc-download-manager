@@ -31,7 +31,9 @@ const base = (s) => `http://127.0.0.1:${s.port}`;
 // without a CORS preflight, and the bridge only grants CORS to extension origins. Chrome omits the
 // Origin header on extension GET requests that are covered by host permissions, so Origin alone is not enough.
 // The id lets the app allow this (Chromium) extension to call the native host that launches it.
-const BRIDGE_HEADERS = { 'X-MCDM-Extension': BROWSER, 'X-MCDM-Extension-Id': api.runtime.id };
+// The version lets the app tell an outdated extension apart (see selfUpdate).
+const EXT_VERSION = api.runtime.getManifest().version;
+const BRIDGE_HEADERS = { 'X-MCDM-Extension': BROWSER, 'X-MCDM-Extension-Id': api.runtime.id, 'X-MCDM-Extension-Version': EXT_VERSION };
 
 // ---------- App communication ----------
 async function ping(settings) {
@@ -46,10 +48,28 @@ async function ping(settings) {
     if (app && app.active > 0) startProgress();
     if (app && Array.isArray(app.captureExtensions)) api.storage.local.set({ captureExtensions: app.captureExtensions });
     if (app && Array.isArray(app.browserOnlySites)) api.storage.local.set({ browserOnlySites: app.browserOnlySites });
+    if (app && app.extensionVersion && app.extensionVersion !== EXT_VERSION) selfUpdate(app.extensionVersion);
     return app;
   } catch {
     return null;
   }
+}
+
+// ---------- Updating an unpacked extension ----------
+// Chrome, Brave and Opera load the extension from a folder the app keeps current (Browser Plugins/<browser>).
+// When the app ships a newer version, reloading picks the new files up from disk. Once per version, so a
+// folder that could not be updated does not cause a reload loop. Safari updates with the app; Firefox's
+// signed add-on is reinstalled from the app's setup wizard.
+async function selfUpdate(target) {
+  if (IS_SAFARI || IS_FIREFOX) return;
+  try {
+    const self = api.management?.getSelf ? await api.management.getSelf() : null;
+    if (self && self.installType !== 'development') return;
+    const { reloadedFor } = await api.storage.local.get('reloadedFor');
+    if (reloadedFor === target) return;
+    await api.storage.local.set({ reloadedFor: target });
+    api.runtime.reload();
+  } catch {}
 }
 
 // ---------- Download progress: toolbar badge + popup list ----------
@@ -439,7 +459,7 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const cached = app ? {} : await api.storage.local.get(['captureExtensions', 'browserOnlySites']);
           sendResponse({
             online: !!app, app, settings, clickIntercept: !api.downloads?.onDeterminingFilename, isSafari: IS_SAFARI,
-            canLaunch: !!api.runtime.sendNativeMessage, captureExtensions: (app && app.captureExtensions) || cached.captureExtensions || [],
+            canLaunch: !!api.runtime.sendNativeMessage, version: EXT_VERSION, isFirefox: IS_FIREFOX, captureExtensions: (app && app.captureExtensions) || cached.captureExtensions || [],
             browserOnlySites: (app && app.browserOnlySites) || cached.browserOnlySites || [],
             bypassHosts: (app && app.bypassHosts) || [],
           });
@@ -451,6 +471,7 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case 'download': sendResponse(await sendToApp(msg)); break;
         case 'setSettings': await setSettings(msg.settings || {}); sendResponse({ ok: true }); break;
         case 'launchApp': sendResponse({ ok: await launchApp() }); break;
+        case 'reloadExtension': sendResponse({ ok: true }); setTimeout(() => api.runtime.reload(), 100); break;
         case 'setSite': sendResponse(await setSiteBrowserOnly(msg.host, !!msg.browserOnly)); break;
         case 'pageMedia': {
           if (sender.tab) {

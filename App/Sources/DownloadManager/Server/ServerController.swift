@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Network
+import AppKit
 
 /// Yerel HTTP köprüsünü yönetir ve istekleri DownloadStore'a çevirir.
 final class ServerController: ObservableObject {
@@ -9,14 +10,68 @@ final class ServerController: ObservableObject {
     /// Last time each browser's extension talked to the bridge (keys: safari, chrome, brave, opera, edge, firefox, other).
     @Published var extensionConnections: [String: Date] = [:]
 
+    /// Version each browser's extension reported last ("" for extensions too old to report one).
+    @Published var extensionVersions: [String: String] = [:]
+
     func isExtensionConnected(_ browser: String, within seconds: TimeInterval = 120) -> Bool {
         guard let d = extensionConnections[browser] else { return false }
         return Date().timeIntervalSince(d) < seconds
     }
 
+    /// The browser's extension talked to the bridge but runs another version than the one this app carries.
+    /// Safari's extension is part of the app and always current.
+    func isExtensionOutdated(_ browser: String) -> Bool {
+        guard browser != "safari", let v = extensionVersions[browser] else { return false }
+        return v != BrowserIntegration.bundledExtensionVersion
+    }
+
+    private var outdatedPrompted: Set<String> = []
+    private var outdatedPromptShowing = false
+
+    /// An outdated extension that reloads itself reports the new version within a ping or two; ask the user only
+    /// when it is still outdated a little later (extensions older than this check, Firefox's signed add-on).
+    private func checkOutdated(_ browser: String) {
+        guard isExtensionOutdated(browser), !outdatedPrompted.contains(browser) else { return }
+        outdatedPrompted.insert(browser)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+            guard let self, self.isExtensionOutdated(browser) else { self?.outdatedPrompted.remove(browser); return }
+            self.promptOutdated(browser)
+        }
+    }
+
+    private func promptOutdated(_ browser: String) {
+        guard !outdatedPromptShowing, let kind = BrowserIntegration.Kind(rawValue: browser) else { return }
+        outdatedPromptShowing = true
+        defer { outdatedPromptShowing = false }
+        let old = extensionVersions[browser].flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "an older version")
+        let new = BrowserIntegration.bundledExtensionVersion
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.icon = kind.icon ?? NSApp.applicationIconImage
+        alert.messageText = String(localized: "The \(kind.name) extension is out of date")
+        if kind == .firefox {
+            alert.informativeText = String(localized: "\(kind.name) runs extension \(old), this app comes with \(new). Install the new add-on: Firefox asks you to confirm.")
+            alert.addButton(withTitle: String(localized: "Add to Firefox"))
+        } else {
+            if BrowserIntegration.filesPrepared(for: kind), !BrowserIntegration.filesUpToDate(for: kind) {
+                try? BrowserIntegration.prepareFiles(for: kind)
+            }
+            alert.informativeText = String(localized: "\(kind.name) runs extension \(old), this app comes with \(new). The extension folder has been updated; click the reload icon (↻) of MC Download Manager on the extensions page, or restart \(kind.name).")
+            alert.addButton(withTitle: String(localized: "Open Extensions Page"))
+        }
+        alert.addButton(withTitle: String(localized: "Later")).keyEquivalent = "\u{1b}"
+        alert.window.level = .floating
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if kind == .firefox { BrowserIntegration.installFirefoxAddon() } else { BrowserIntegration.openExtensionsPage(in: kind) }
+    }
+
     private func noteConnection(_ req: HTTPRequest) {
         let browser = Self.browserName(req)
         extensionConnections[browser] = Date()
+        let version = req.headers["x-mcdm-extension-version"] ?? ""
+        if extensionVersions[browser] != version { extensionVersions[browser] = version }
+        checkOutdated(browser)
         // Chromium extension ids may call the native host that launches the app (see NativeHostRegistry).
         var extensionID = req.headers["x-mcdm-extension-id"]
         if let origin = req.headers["origin"], origin.hasPrefix("chrome-extension://") {
@@ -142,6 +197,8 @@ final class ServerController: ObservableObject {
                 "ytdlp": VideoDownloader.locateYtDlp(custom: settings.ytdlpPath) != nil,
                 "active": store.items.filter { $0.state.isActive }.count,
                 "captureExtensions": settings.captureExtensions,
+                // Extensions compare this with their own version and reload themselves (unpacked) when it differs.
+                "extensionVersion": BrowserIntegration.bundledExtensionVersion,
                 // Downloads from these sites stay in the browser: permanently, or for a few minutes after a hand-off.
                 "browserOnlySites": settings.browserOnlySites,
                 "bypassHosts": store.bypassHosts,

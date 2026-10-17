@@ -40,6 +40,14 @@ async function refresh() {
     : t('popupOffline');
   $('offline').classList.toggle('hidden', online);
   $('launch').classList.toggle('hidden', !(st && st.canLaunch));
+  // The app carries a newer extension: unpacked builds reload from its folder, Firefox reinstalls from the app.
+  const want = online && st.app.extensionVersion;
+  const stale = !!want && want !== st.version && !st.isSafari;
+  $('outdated').classList.toggle('hidden', !stale);
+  if (stale) {
+    $('outdatedText').textContent = st.isFirefox ? t('popupOutdatedFirefox', [st.version, want]) : t('popupOutdated', [st.version, want]);
+    $('reloadExt').classList.toggle('hidden', !!st.isFirefox);
+  }
   if (st && st.settings) {
     $('intercept').checked = !!st.settings.intercept;
     $('sniff').checked = !!st.settings.sniff;
@@ -174,6 +182,7 @@ $('pageLink').onclick = async () => {
   await send({ type: 'download', url: tab.url, referer: tab.url, kind: 'file' });
   window.close();
 };
+$('reloadExt').onclick = () => { send({ type: 'reloadExtension' }); window.close(); };
 $('launch').onclick = async () => {
   await send({ type: 'launchApp' });
   setTimeout(refresh, 1500);

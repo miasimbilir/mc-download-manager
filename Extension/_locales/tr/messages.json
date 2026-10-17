@@ -157,5 +157,37 @@
   "popupSiteNeedsApp": {
     "message": "Bunu değiştirmek için uygulamayı açın",
     "description": "Tooltip when the app is offline"
+  },
+  "popupOutdated": {
+    "message": "Bu eklenti ($CUR$) uygulamanınkinden ($NEW$) eski.",
+    "description": "Popup notice; $CUR$ installed, $NEW$ expected",
+    "placeholders": {
+      "cur": {
+        "content": "$1",
+        "example": "1.4.0"
+      },
+      "new": {
+        "content": "$2",
+        "example": "1.5.0"
+      }
+    }
+  },
+  "popupOutdatedFirefox": {
+    "message": "Bu eklenti ($CUR$) uygulamanınkinden ($NEW$) eski. Yenisini kurun: Uygulama Ayarları ▸ Tarayıcı Eklentileri ▸ Kurulum Sihirbazı ▸ Firefox'a Ekle.",
+    "description": "Popup notice for Firefox",
+    "placeholders": {
+      "cur": {
+        "content": "$1",
+        "example": "1.4.0"
+      },
+      "new": {
+        "content": "$2",
+        "example": "1.5.0"
+      }
+    }
+  },
+  "popupReloadExt": {
+    "message": "Şimdi Güncelle",
+    "description": "Button: reload the unpacked extension from disk"
   }
 }

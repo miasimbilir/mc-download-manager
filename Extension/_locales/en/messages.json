@@ -157,5 +157,37 @@
   "popupSiteNeedsApp": {
     "message": "Open the app to change this",
     "description": "Tooltip when the app is offline"
+  },
+  "popupOutdated": {
+    "message": "This extension ($CUR$) is older than the app's ($NEW$).",
+    "description": "Popup notice; $CUR$ installed, $NEW$ expected",
+    "placeholders": {
+      "cur": {
+        "content": "$1",
+        "example": "1.4.0"
+      },
+      "new": {
+        "content": "$2",
+        "example": "1.5.0"
+      }
+    }
+  },
+  "popupOutdatedFirefox": {
+    "message": "This add-on ($CUR$) is older than the app's ($NEW$). Install the new one: app Settings ▸ Browser Extensions ▸ Setup Wizard ▸ Add to Firefox.",
+    "description": "Popup notice for Firefox",
+    "placeholders": {
+      "cur": {
+        "content": "$1",
+        "example": "1.4.0"
+      },
+      "new": {
+        "content": "$2",
+        "example": "1.5.0"
+      }
+    }
+  },
+  "popupReloadExt": {
+    "message": "Update Now",
+    "description": "Button: reload the unpacked extension from disk"
   }
 }

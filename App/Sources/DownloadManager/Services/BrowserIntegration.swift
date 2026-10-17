@@ -93,6 +93,31 @@ enum BrowserIntegration {
         FileManager.default.fileExists(atPath: pluginFolder(for: kind).appendingPathComponent("manifest.json").path)
     }
 
+    // MARK: Versions
+
+    private static func manifestVersion(in folder: URL) -> String? {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("manifest.json")),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return obj["version"] as? String
+    }
+
+    /// Version of the extension this app carries; every browser's extension should report the same.
+    static let bundledExtensionVersion: String = manifestVersion(in: bundledExtensionFolder) ?? ServerController.version
+
+    /// Version of the files in the browser's plugin folder (nil when not prepared).
+    static func preparedVersion(for kind: Kind) -> String? { manifestVersion(in: pluginFolder(for: kind)) }
+
+    static func filesUpToDate(for kind: Kind) -> Bool { preparedVersion(for: kind) == bundledExtensionVersion }
+
+    /// After an app update, replaces plugin folders prepared by an older version. Browsers keep running the old
+    /// code until the extension is reloaded; extensions that report their version to the bridge reload themselves
+    /// when the app reports a different one (older ones need the reload icon once). Runs at launch, off the main thread.
+    static func refreshOutdatedPluginFolders() {
+        for kind in Kind.allCases where kind.isChromium && filesPrepared(for: kind) && !filesUpToDate(for: kind) {
+            try? prepareFiles(for: kind)
+        }
+    }
+
     // MARK: Safari
 
     static func safariExtensionEnabled() async -> Bool? {

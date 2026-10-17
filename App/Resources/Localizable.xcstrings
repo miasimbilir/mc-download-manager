@@ -3261,6 +3261,136 @@
           }
         }
       }
+    },
+    "an older version": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "eski bir sürüm"
+          }
+        }
+      }
+    },
+    "The %@ extension is out of date": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ eklentisi güncel değil"
+          }
+        }
+      }
+    },
+    "%@ runs extension %@, this app comes with %@. Install the new add-on: Firefox asks you to confirm.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, eklentinin %2$@ sürümünü çalıştırıyor; bu uygulama %3$@ sürümüyle geliyor. Yeni eklentiyi kurun, Firefox onayınızı isteyecek."
+          }
+        }
+      }
+    },
+    "%@ runs extension %@, this app comes with %@. The extension folder has been updated; click the reload icon (↻) of MC Download Manager on the extensions page, or restart %@.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, eklentinin %2$@ sürümünü çalıştırıyor; bu uygulama %3$@ sürümüyle geliyor. Eklenti klasörü güncellendi; eklentiler sayfasında MC Download Manager'ın yenile simgesine (↻) tıklayın ya da %4$@ tarayıcısını yeniden başlatın."
+          }
+        }
+      }
+    },
+    "Open Extensions Page": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eklentiler Sayfasını Aç"
+          }
+        }
+      }
+    },
+    "Update needed (%@ → %@)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Güncelleme gerekli (%1$@ → %2$@)"
+          }
+        }
+      }
+    },
+    "Connected (%@)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bağlı (%@)"
+          }
+        }
+      }
+    },
+    "Files from an older version": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eski sürüme ait dosyalar"
+          }
+        }
+      }
+    },
+    "Files prepared, not connected": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dosyalar hazır, bağlı değil"
+          }
+        }
+      }
+    },
+    "Files are ready (version %@)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dosyalar hazır (sürüm %@)"
+          }
+        }
+      }
+    },
+    "The folder holds an older version — click “Prepare Files”": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klasörde eski bir sürüm var — “Dosyaları Hazırla”ya tıklayın"
+          }
+        }
+      }
+    },
+    "The browser still runs an older version. Click the reload icon (↻) of MC Download Manager on the extensions page, or restart the browser.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarayıcı hâlâ eski sürümü çalıştırıyor. Eklentiler sayfasında MC Download Manager'ın yenile simgesine (↻) tıklayın ya da tarayıcıyı yeniden başlatın."
+          }
+        }
+      }
+    },
+    "Connected, but the extension is out of date (%@ → %@)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bağlı, ancak eklenti güncel değil (%1$@ → %2$@)"
+          }
+        }
+      }
     }
   }
 }

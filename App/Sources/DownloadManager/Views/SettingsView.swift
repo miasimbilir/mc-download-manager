@@ -206,10 +206,23 @@ struct BrowserSettings: View {
             } else {
                 Text("…").foregroundStyle(.secondary)
             }
+        } else if connected && server.isExtensionOutdated(b.rawValue) {
+            HStack(spacing: 8) {
+                Label("Update needed (\(server.extensionVersions[b.rawValue].flatMap { $0.isEmpty ? nil : $0 } ?? "?") → \(BrowserIntegration.bundledExtensionVersion))",
+                      systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Button(b == .firefox ? "Add to Firefox" : "Open Extensions Page") {
+                    if b == .firefox { BrowserIntegration.installFirefoxAddon() } else {
+                        if !BrowserIntegration.filesUpToDate(for: b) { try? BrowserIntegration.prepareFiles(for: b) }
+                        BrowserIntegration.openExtensionsPage(in: b)
+                    }
+                }
+            }
         } else if connected {
-            Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            Label("Connected (\(server.extensionVersions[b.rawValue] ?? ""))", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        } else if b.isChromium && BrowserIntegration.filesPrepared(for: b) && !BrowserIntegration.filesUpToDate(for: b) {
+            Label("Files from an older version", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
         } else if BrowserIntegration.filesPrepared(for: b) {
-            Label("Files prepared, not loaded yet", systemImage: "circle.dashed").foregroundStyle(.secondary)
+            Label("Files prepared, not connected", systemImage: "circle.dashed").foregroundStyle(.secondary)
         } else {
             Label("Not installed", systemImage: "circle.dashed").foregroundStyle(.secondary)
         }

@@ -188,8 +188,9 @@ begin
   for I := 0 to 4 do
   begin
     if not RegQueryStringValue(HKEY_CURRENT_USER, Vendors[I] + '\NativeMessagingHosts\' + HostName, '', Manifest) then continue;
-    // A manifest that is gone or names this copy; one that names another copy stays.
-    if (not LoadStringFromFile(Manifest, Content)) or PointsHere(String(Content)) then
+    // A manifest that is gone or names this copy; one that names another copy stays. The app writes it as
+    // UTF-8 without escaping non-ASCII letters, so a folder such as "Çağrı" must be decoded as UTF-8, not ANSI.
+    if (not LoadStringFromFile(Manifest, Content)) or PointsHere(UTF8Decode(Content)) then
     begin
       RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, Vendors[I] + '\NativeMessagingHosts\' + HostName);
       DeleteFile(Manifest);

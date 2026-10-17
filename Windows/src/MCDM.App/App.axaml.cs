@@ -275,11 +275,19 @@ public partial class App : Application, IStoreUi
                 await Task.Run(BrowserIntegration.RefreshPreparedFiles);
             var text = kind.Firefox
                 ? Loc.T("{0} runs extension {1}, this app comes with {2}. Install the new add-on: Firefox asks you to confirm.", kind.Name, old, bundled)
-                : Loc.T("{0} runs extension {1}, this app comes with {2}. The extension folder has been updated; click the reload icon (↻) of MC Download Manager on the extensions page, or restart {3}.", kind.Name, old, bundled, kind.Name);
+                // Restarting the browser is not enough: an unpacked extension keeps its old service worker until
+                // "Reload" is clicked. A running Edge or Opera also ignores edge://extensions on its command line
+                // (it opens a new tab), and it is always running here, so the address goes to the clipboard as well.
+                : Loc.T("{0} runs extension {1}, this app comes with {2}. The extension folder has been updated; on the extensions page, click the reload icon (↻) of MC Download Manager. The button below also copies the page's address: if the page does not appear by itself, click the address bar, paste (Ctrl+V) and press Enter.", kind.Name, old, bundled);
             var (button, _) = await PromptWindow.Ask(null, Loc.T("The {0} extension is out of date", kind.Name), text,
                 [kind.Firefox ? Loc.T("Add to Firefox") : Loc.T("Open Extensions Page"), Loc.T("Later")], cancelIndex: 1);
             if (button != 0) return;
-            if (kind.Firefox) BrowserIntegration.InstallFirefoxAddon(kind); else BrowserIntegration.OpenExtensionsPage(kind);
+            if (kind.Firefox) BrowserIntegration.InstallFirefoxAddon(kind);
+            else
+            {
+                try { if (MainWindow.Clipboard is { } c) await c.SetTextAsync(kind.ExtensionsPage); } catch { }
+                BrowserIntegration.OpenExtensionsPage(kind);
+            }
         }
         catch (Exception e) { CrashLog.Write(e); }
         finally

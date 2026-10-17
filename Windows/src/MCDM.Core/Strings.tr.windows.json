@@ -93,6 +93,7 @@
  "You have version {0}.": "Sizde {0} sürümü var.",
  "YouTube now requires yt-dlp to run JavaScript (deno) to unlock video streams. Without it, YouTube downloads may fail with errors such as “The page needs to be reloaded” or “n challenge solving failed”.\n\nMC Download Manager can download deno ({0}) from its official GitHub releases and keep it in its own app data folder.": "YouTube artık video akışlarını açmak için yt-dlp'nin JavaScript (deno) çalıştırmasını gerektiriyor. deno olmadan YouTube indirmeleri “The page needs to be reloaded” veya “n challenge solving failed” gibi hatalarla başarısız olabilir.\n\nMC Download Manager deno'yu ({0}) resmi GitHub sürümlerinden indirip kendi uygulama verisi klasöründe tutabilir.",
  "YouTube requires a JavaScript runtime to unlock video streams. deno is downloaded from its official GitHub releases (checksum verified) into the app data folder.": "YouTube, video akışlarını açmak için bir JavaScript çalışma ortamı gerektiriyor. deno resmi GitHub sürümlerinden (sağlama toplamı doğrulanarak) uygulama verisi klasörüne indirilir.",
+ "an older version": "eski bir",
  "bytes": "bayt",
  "just now": "az önce",
  "yesterday": "dün",
@@ -102,5 +103,6 @@
  "{0} is still running an older version of the extension. Open its extensions page and click “Reload” (the round arrow) on the MC Download Manager card.": "{0} hâlâ eklentinin eski sürümünü çalıştırıyor. Eklentiler sayfasını açıp MC Download Manager kartındaki “Yeniden yükle”ye (yuvarlak ok) tıklayın.",
  "{0} min ago": "{0} dk önce",
  "{0} of {1} videos saved": "{1} videodan {0} tanesi kaydedildi",
+ "{0} runs extension {1}, this app comes with {2}. The extension folder has been updated; on the extensions page, click the reload icon (↻) of MC Download Manager. The button below also copies the page's address: if the page does not appear by itself, click the address bar, paste (Ctrl+V) and press Enter.": "{0}, eklentinin {1} sürümünü çalıştırıyor; bu uygulama {2} sürümüyle geliyor. Eklenti klasörü güncellendi; eklentiler sayfasında MC Download Manager'ın yenile simgesine (↻) tıklayın. Aşağıdaki düğme sayfanın adresini de kopyalar: sayfa kendiliğinden açılmazsa adres çubuğuna tıklayın, yapıştırın (Ctrl+V) ve Enter'a basın.",
  "{0} {1} is available": "{0} {1} yayınlandı"
 }

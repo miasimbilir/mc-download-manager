@@ -321,6 +321,14 @@ public sealed class BrowserKind
     }
 
     public bool IsInstalled => ExecutablePath != null;
+
+    /// The installed browser behind a bridge id. Opera and Opera GX share "opera": the one whose extension
+    /// folder was prepared is taken first.
+    public static BrowserKind? ForId(string id)
+    {
+        var installed = All.Where(k => k.Id == id && k.IsInstalled).ToList();
+        return installed.FirstOrDefault(k => k.Firefox || BrowserIntegration.FilesPrepared(k)) ?? installed.FirstOrDefault();
+    }
 }
 
 /// Browser extension helpers: the unpacked extension shipped next to the executable is copied to
@@ -397,14 +405,15 @@ public static class BrowserIntegration
         get
         {
             var folder = BundledExtensionFolder;
-            var cached = bundledVersionCache;
-            if (cached is { } c && c.Folder == folder) return c.Version;
+            if (bundledVersionCache is { } c && c.Folder == folder) return c.Version;
             var v = ManifestVersion(folder);
-            bundledVersionCache = (folder, v);
+            bundledVersionCache = new(folder, v);
             return v;
         }
     }
-    private static (string Folder, string? Version)? bundledVersionCache;
+    // A reference, so a reader on another thread never sees half of an update.
+    private sealed record VersionCache(string Folder, string? Version);
+    private static volatile VersionCache? bundledVersionCache;
 
     private static string? ManifestVersion(string folder)
     {
@@ -469,7 +478,7 @@ public static class BrowserIntegration
     {
         if (Links.ParseHttp(url.AbsoluteUri) is not { } safe) return;
         if (OpenInBrowserHook is { } hook) { hook(safe, browserId); return; }
-        var exe = browserId == null ? null : BrowserKind.All.Where(k => k.Id == browserId).Select(k => k.ExecutablePath).FirstOrDefault(p => p != null);
+        var exe = browserId == null ? null : BrowserKind.ForId(browserId)?.ExecutablePath;
         if (exe != null)
         {
             try

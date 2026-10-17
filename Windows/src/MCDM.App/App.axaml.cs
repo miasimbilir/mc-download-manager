@@ -256,13 +256,16 @@ public partial class App : Application, IStoreUi
     }
 
     private bool outdatedAsking;
+    private readonly Queue<string> outdatedWaiting = [];
 
     /// A browser still runs an extension older than the one this app carries: say so once, and offer the fix
     /// (Chromium: the folder is current, the extension has to be reloaded; Firefox: install the new add-on).
+    /// One window at a time; a second browser waits for the first.
     private async Task TellOutdatedExtension(string browserId)
     {
-        if (Headless || outdatedAsking) return;
-        if (BrowserKind.All.FirstOrDefault(k => k.Id == browserId && k.IsInstalled) is not { } kind) return;
+        if (Headless) return;
+        if (outdatedAsking) { if (!outdatedWaiting.Contains(browserId)) outdatedWaiting.Enqueue(browserId); return; }
+        if (BrowserKind.ForId(browserId) is not { } kind) { TellNextOutdated(); return; }
         outdatedAsking = true;
         try
         {
@@ -279,7 +282,18 @@ public partial class App : Application, IStoreUi
             if (kind.Firefox) BrowserIntegration.InstallFirefoxAddon(kind); else BrowserIntegration.OpenExtensionsPage(kind);
         }
         catch (Exception e) { CrashLog.Write(e); }
-        finally { outdatedAsking = false; }
+        finally
+        {
+            outdatedAsking = false;
+            TellNextOutdated();
+        }
+    }
+
+    private void TellNextOutdated()
+    {
+        // Still outdated? It may have been reloaded while the other window was open.
+        while (outdatedWaiting.TryDequeue(out var next))
+            if (Server.IsExtensionOutdated(next)) { _ = TellOutdatedExtension(next); return; }
     }
 
     public async void QueueFinished(QueueEndAction action)

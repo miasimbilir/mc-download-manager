@@ -147,7 +147,9 @@ public static class Updater
             dl.Start();
             if (await done.Task.ConfigureAwait(false) is { } error) throw error;
         }
-        else File.Copy(update.InstallerUrl!, part, true);     // a test feed may name a local file
+        // A test feed (MCDM_UPDATE_FEED) may name a local file; a real release never does.
+        else if (Environment.GetEnvironmentVariable("MCDM_UPDATE_FEED") is { Length: > 0 }) File.Copy(update.InstallerUrl!, part, true);
+        else throw new DownloadFailure(Loc.T("This release has no installer that can be verified."));
 
         var actual = await Task.Run(() =>
         {

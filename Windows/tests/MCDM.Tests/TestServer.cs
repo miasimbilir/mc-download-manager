@@ -125,6 +125,11 @@ public sealed class TestServer : IDisposable
                 // Answers the probe, refuses the parallel segment requests.
                 if (range is not null and not (0, 0)) { await Head(s, "403 Forbidden", "Content-Length: 0"); return true; }
                 break;
+            case "/late-refusal":
+                // Serves the probe and the first segment, then refuses the rest (a link that expires mid-download).
+                if (range is (0, 0) || range is (0, _)) break;
+                if (range != null) { await Task.Delay(400); await Head(s, "403 Forbidden", "Content-Length: 0"); return true; }
+                break;
             case "/forbidden":
                 await Head(s, "403 Forbidden", "Content-Length: 0");
                 return true;

@@ -450,8 +450,9 @@ public sealed class DownloadStore
 
     private void HandleProbe(Guid id, ProbeResult p)
     {
-        // Paused or cancelled just before the answer arrived: the row must not come back to life.
-        if (Find(id) is not { State: DownloadState.probing }) return;
+        // Paused or cancelled just before the answer arrived: the row must not come back to life. A download that
+        // fell back to one connection reports again while downloading.
+        if (Find(id) is not { State: DownloadState.probing or DownloadState.downloading }) return;
         Update(id, item =>
         {
             ApplyProbe(item, p);

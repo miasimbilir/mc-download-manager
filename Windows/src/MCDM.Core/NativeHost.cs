@@ -261,38 +261,44 @@ public static class NativeHostRegistry
 
     /// Writes the manifests and the registry entries. Only a complete copy of the app registers itself, and
     /// an entry whose program still exists is left to that copy — the same rule as for the sign-in entry.
+    private static readonly object registerGate = new();
+
     public static void Register(AppSettings settings)
     {
         if (!OperatingSystem.IsWindows() || !Shell.CompleteCopy || Environment.ProcessPath is not { } exe) return;
-        try
+        // Called at start and again when a new extension id shows up; both must not write the manifests at once.
+        lock (registerGate)
         {
-            Directory.CreateDirectory(ManifestDirectory);
-            var ids = AllowedChromiumIds(settings);
-            foreach (var firefox in new[] { false, true })
+            try
             {
-                var file = ManifestPath(firefox);
-                var owner = File.Exists(file) ? ManifestProgram(file) : null;
-                if (owner != null && !string.Equals(owner, exe, StringComparison.OrdinalIgnoreCase) && File.Exists(owner)) continue;
-                var text = BuildManifest(exe, firefox, ids);
-                if (!File.Exists(file) || File.ReadAllText(file) != text) File.WriteAllText(file, text, new UTF8Encoding(false));
-            }
-            foreach (var (vendor, key, firefox) in browsers)
-            {
-                try
+                Directory.CreateDirectory(ManifestDirectory);
+                var ids = AllowedChromiumIds(settings);
+                foreach (var firefox in new[] { false, true })
                 {
-                    if (!vendor.EndsWith("Chrome", StringComparison.Ordinal))
-                    {
-                        using var installed = Registry.CurrentUser.OpenSubKey(vendor);
-                        if (installed == null) continue;
-                    }
-                    using var k = Registry.CurrentUser.CreateSubKey(key + "\\" + NativeHost.HostName);
                     var file = ManifestPath(firefox);
-                    if (k.GetValue(null) as string != file) k.SetValue(null, file);
+                    var owner = File.Exists(file) ? ManifestProgram(file) : null;
+                    if (owner != null && !string.Equals(owner, exe, StringComparison.OrdinalIgnoreCase) && File.Exists(owner)) continue;
+                    var text = BuildManifest(exe, firefox, ids);
+                    if (!File.Exists(file) || File.ReadAllText(file) != text) File.WriteAllText(file, text, new UTF8Encoding(false));
                 }
-                catch { }
+                foreach (var (vendor, key, firefox) in browsers)
+                {
+                    try
+                    {
+                        if (!vendor.EndsWith("Chrome", StringComparison.Ordinal))
+                        {
+                            using var installed = Registry.CurrentUser.OpenSubKey(vendor);
+                            if (installed == null) continue;
+                        }
+                        using var k = Registry.CurrentUser.CreateSubKey(key + "\\" + NativeHost.HostName);
+                        var file = ManifestPath(firefox);
+                        if (k.GetValue(null) as string != file) k.SetValue(null, file);
+                    }
+                    catch { }
+                }
             }
+            catch { }
         }
-        catch { }
     }
 
     /// One line per browser key, for the self-test report.

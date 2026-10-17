@@ -20,6 +20,8 @@ public static class Sites
                 if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
                     !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
                     return null;
+                // An IPv6 literal ("[::1]") could not be read back from the list as a bare host.
+                if (uri.HostNameType == UriHostNameType.IPv6) return null;
                 host = uri.IdnHost;
             }
             else

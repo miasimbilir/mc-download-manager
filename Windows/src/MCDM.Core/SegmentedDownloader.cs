@@ -73,6 +73,10 @@ public sealed class SegmentedDownloader
     {
         stopped = true;
         try { stopCts.Cancel(); } catch { }
+        // Let go of the part file now, not when the last connection has unwound: on NTFS a file deleted while a
+        // handle is open stays "delete pending", and a download restarted right away could not create it again.
+        // Writes after this end as cancellations (see Write).
+        CloseFile();
     }
 
     private async Task RunAsync()
@@ -392,6 +396,7 @@ public sealed class SegmentedDownloader
         var throttledUntil = DateTime.MinValue;
         Exception? fatal = null;
         var fallback = false;
+        var resuming = config.ResumeSegments.Count > 0;
         var wake = new SemaphoreSlim(0);
         var tasks = new List<Task>();
 
@@ -454,9 +459,15 @@ public sealed class SegmentedDownloader
                     }
                     else
                     {
-                        // 401/403/410…: the server answered the probe but refuses parallel connections — continue on one,
-                        // the way a browser downloads.
-                        lock (gate) { fallback = true; multi.Cancel(); }
+                        lock (gate)
+                        {
+                            // 401/403/410… before anything arrived: the server answered the probe but refuses parallel
+                            // connections — continue on one, the way a browser downloads. Once data is on disk (or when
+                            // resuming) starting over could throw it away for a login page: stop with the status instead,
+                            // so the download can be resumed later with fresh cookies.
+                            if (resuming || segments.Any(s => s.Received > 0)) Fatal(new HttpStatusError(status));
+                            else { fallback = true; multi.Cancel(); }
+                        }
                     }
                 }
             }
@@ -509,9 +520,9 @@ public sealed class SegmentedDownloader
         if (fatal != null) throw fatal;
         if (fallback)
         {
-            // The part file and the segment state stay as they are until the single stream is actually served:
-            // a refused resume (an expired link) can still be resumed later with fresh cookies.
-            await RunSingleAsync(stop).ConfigureAwait(false);
+            // The part file and the segment state stay as they are until the single stream is actually served.
+            // It reports what it finds (no ranges, its own length), so the item does not keep the probe's answer.
+            await RunSingleAsync(stop, reportProbe: true).ConfigureAwait(false);
             return;
         }
         lock (gate)

@@ -66,7 +66,8 @@ public class DownloaderTests
         using var server = new TestServer(900_000);
         var r = await Download(server.Url("/lie"));
         Assert.Null(r.Error);
-        Assert.True(r.Probe!.SupportsRanges);
+        // The probe said "ranges"; the single stream reports again, so the item does not keep that claim.
+        Assert.False(r.Probe!.SupportsRanges);
         AssertSame(server.Data, r.Path);
     }
 

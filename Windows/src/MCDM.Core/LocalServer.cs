@@ -154,6 +154,8 @@ public sealed class ServerController : INotifyPropertyChanged
     private readonly HashSet<string> outdatedExtensions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> extensionVersions = new(StringComparer.Ordinal);
     private readonly HashSet<string> outdatedNoticed = new(StringComparer.Ordinal);
+    /// Kept here: a Timer nobody references may be collected before it fires.
+    private readonly Dictionary<string, Timer> outdatedTimers = new(StringComparer.Ordinal);
 
     public bool IsExtensionOutdated(string browser) => outdatedExtensions.Contains(browser);
 
@@ -232,6 +234,8 @@ public sealed class ServerController : INotifyPropertyChanged
         stopped = true;
         retry?.Dispose();
         restart?.Dispose();
+        foreach (var t in outdatedTimers.Values) t.Dispose();
+        outdatedTimers.Clear();
         server?.Stop();
         server = null;
         Running = false;
@@ -279,12 +283,12 @@ public sealed class ServerController : INotifyPropertyChanged
         var outdated = IsOutdated(req.Headers.ContainsKey("x-mcdm-extension-id"), version, BrowserIntegration.BundledVersion);
         var changed = outdated ? outdatedExtensions.Add(browser) : outdatedExtensions.Remove(browser);
         if (first || changed || versionChanged) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
-        if (outdated && browser != "other" && outdatedNoticed.Add(browser))
+        if (outdated && browser != "other" && !stopped && outdatedNoticed.Add(browser))
         {
-            Timer? t = null;
-            t = new Timer(_ => MainThread.Post(() =>
+            outdatedTimers[browser] = new Timer(_ => MainThread.Post(() =>
             {
-                t?.Dispose();
+                if (outdatedTimers.Remove(browser, out var t)) t.Dispose();
+                if (stopped) return;
                 if (IsExtensionOutdated(browser)) ExtensionOutdated?.Invoke(browser);
                 else outdatedNoticed.Remove(browser);   // it reloaded itself; a later outdated copy is noticed again
             }), null, OutdatedGrace, Timeout.InfiniteTimeSpan);

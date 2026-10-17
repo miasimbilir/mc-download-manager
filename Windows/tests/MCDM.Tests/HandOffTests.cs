@@ -64,6 +64,16 @@ public class HandOffTests
     }
 
     [Fact]
+    public async Task A_refusal_after_data_arrived_does_not_start_over()
+    {
+        using var server = new TestServer(2_000_000);
+        var r = await Download(server.Url("/late-refusal"));
+        // Starting over on one connection could replace what is on disk with a login page: stop with the status.
+        Assert.Equal(403, Assert.IsType<HttpStatusError>(r.Error).Status);
+        Assert.DoesNotContain(server.Requests, q => q.Path == "/late-refusal" && !q.Headers.ContainsKey("Range"));
+    }
+
+    [Fact]
     public async Task A_server_that_refuses_everything_still_fails_with_its_status()
     {
         using var server = new TestServer(1000);

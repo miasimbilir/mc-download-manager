@@ -77,11 +77,17 @@ public class UpdaterTests
         await Assert.ThrowsAsync<DownloadFailure>(() => Updater.DownloadInstallerAsync(tampered, null, CancellationToken.None));
         Assert.Empty(Directory.GetFiles(Updater.UpdateDir, "*9.9.2*"));
 
-        // A test feed may point at a file on disk.
+        // A test feed may point at a file on disk; a real release may not (no file shares, no local paths).
         var local = Path.Combine(Setup.TempDir(), "Setup.exe");
         File.WriteAllBytes(local, server.Data);
-        var copied = await Updater.DownloadInstallerAsync(good with { Version = "9.9.3", InstallerUrl = local }, null, CancellationToken.None);
-        Assert.Equal(server.Data, File.ReadAllBytes(copied));
+        await Assert.ThrowsAsync<DownloadFailure>(() => Updater.DownloadInstallerAsync(good with { Version = "9.9.3", InstallerUrl = local }, null, CancellationToken.None));
+        Environment.SetEnvironmentVariable("MCDM_UPDATE_FEED", "test");
+        try
+        {
+            var copied = await Updater.DownloadInstallerAsync(good with { Version = "9.9.3", InstallerUrl = local }, null, CancellationToken.None);
+            Assert.Equal(server.Data, File.ReadAllBytes(copied));
+        }
+        finally { Environment.SetEnvironmentVariable("MCDM_UPDATE_FEED", null); }
 
         Updater.CleanUp();
         Assert.False(Directory.Exists(Updater.UpdateDir));

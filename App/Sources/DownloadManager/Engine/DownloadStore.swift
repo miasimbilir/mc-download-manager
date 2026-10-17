@@ -14,6 +14,7 @@ struct NewDownloadRequest {
     var kind: DownloadKind = .file
     var extraHeaders: [String: String] = [:]
     var segments: Int? = nil
+    var sourceBrowser: String? = nil
 
     init(url: URL) { self.url = url }
 }
@@ -33,6 +34,11 @@ final class DownloadStore: ObservableObject {
     private var denoDeclinedThisLaunch = false
     /// Video downloads that are retried without cookies after YouTube rejected the signed-in client.
     private var cookielessVideos: Set<UUID> = []
+    /// Failed downloads waiting for the "download in the browser instead?" prompt.
+    private var handOffQueue: [UUID] = []
+    private var handOffPrompting = false
+    /// Hosts the extensions must leave to the browser for a short while (a download handed back to the browser).
+    private var browserBypass: [String: Date] = [:]
     private var samples: [UUID: (bytes: Int64, time: Date)] = [:]
     private var timer: Timer?
     private var saveWork: DispatchWorkItem?
@@ -109,6 +115,7 @@ final class DownloadStore: ObservableObject {
                                 kind: req.kind)
         item.headers = headers
         item.requestedSegments = req.segments ?? 0
+        item.sourceBrowser = req.sourceBrowser
         if req.kind == .video, let cookies = req.cookies, !cookies.isEmpty {
             item.cookieFile = writeCookieFile(cookies, id: item.id)
         }
@@ -236,15 +243,108 @@ final class DownloadStore: ObservableObject {
                 items[i] = item
             }
         case .failure(let e):
+            if let h = e as? HTTPStatusError { update(id) { $0.lastHTTPStatus = h.status } }
+            guard let item = items.first(where: { $0.id == id }), item.state != .paused, item.state != .cancelled else { break }
             update(id) {
-                guard $0.state != .paused, $0.state != .cancelled else { return }
                 $0.state = .failed
                 $0.errorMessage = e.localizedDescription
                 $0.speed = 0
             }
+            if Self.browserMightHelp(e) { offerBrowserHandOff(id) }
         }
         scheduleSave()
         pumpQueue()
+    }
+
+    // MARK: - Hand-off to the browser
+
+    /// Server refusals and odd responses: a browser (its own cookies, one connection, the site's own flow) may succeed.
+    /// Local problems (disk, no network) would fail there too.
+    private static func browserMightHelp(_ error: Error) -> Bool {
+        if error is HTTPStatusError { return true }
+        let e = error as NSError
+        if let f = error as? DownloadFailure { return !f.local }
+        guard e.domain == NSURLErrorDomain else { return false }
+        return ![NSURLErrorNotConnectedToInternet, NSURLErrorCancelled, NSURLErrorNetworkConnectionLost,
+                 NSURLErrorCannotCreateFile, NSURLErrorCannotWriteToFile].contains(e.code)
+    }
+
+    /// Hosts the browser extensions must not capture right now (see `/ping`).
+    var bypassHosts: [String] {
+        let now = Date()
+        browserBypass = browserBypass.filter { $0.value > now }
+        return Array(browserBypass.keys)
+    }
+
+    /// The site a download belongs to: the page it was started from, else its own host.
+    static func siteHost(of item: DownloadItem) -> String? {
+        AppSettings.siteKey(item.referer?.host ?? item.url.host)
+    }
+
+    private func offerBrowserHandOff(_ id: UUID) {
+        if !handOffQueue.contains(id) { handOffQueue.append(id) }
+        guard !handOffPrompting else { return }
+        handOffPrompting = true
+        DispatchQueue.main.async { [weak self] in self?.promptNextHandOff() }
+    }
+
+    private func promptNextHandOff() {
+        guard !handOffQueue.isEmpty else { handOffPrompting = false; return }
+        let id = handOffQueue.removeFirst()
+        guard let item = items.first(where: { $0.id == id }), item.state == .failed else { promptNextHandOff(); return }
+        let site = Self.siteHost(of: item) ?? item.url.absoluteString
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.icon = NSApp.applicationIconImage
+        alert.messageText = String(localized: "Download in the browser instead?")
+        alert.informativeText = String(localized: "“\(item.fileName)” could not be downloaded: \(item.errorMessage ?? "")\n\nSome sites (for example WeTransfer) only allow their downloads in a browser. MC Download Manager can hand this download back to the browser.")
+        alert.addButton(withTitle: String(localized: "Download in Browser"))
+        alert.addButton(withTitle: String(localized: "Retry Here"))
+        alert.addButton(withTitle: String(localized: "Close")).keyEquivalent = "\u{1b}"
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = String(localized: "Always leave downloads from \(site) to the browser")
+        alert.window.level = .floating
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        let always = alert.suppressionButton?.state == .on
+        switch response {
+        case .alertFirstButtonReturn:
+            if always { settings.setBrowserOnly(Self.siteHost(of: item), true) }
+            handOffToBrowser(id)
+        case .alertSecondButtonReturn:
+            if always { settings.setBrowserOnly(Self.siteHost(of: item), true) }
+            resume(id)
+        default:
+            if always { settings.setBrowserOnly(Self.siteHost(of: item), true) }
+        }
+        promptNextHandOff()
+    }
+
+    private static let browserBundleIDs = [
+        "chrome": "com.google.Chrome", "brave": "com.brave.Browser", "opera": "com.operasoftware.Opera", "edge": "com.microsoft.edgemac",
+        "firefox": "org.mozilla.firefox", "safari": "com.apple.Safari",
+    ]
+
+    /// Opens the download in the browser it came from and lets the extension pass it through for a few minutes.
+    func handOffToBrowser(_ id: UUID) {
+        guard let item = items.first(where: { $0.id == id }) else { return }
+        let until = Date().addingTimeInterval(180)
+        for host in [item.url.host, item.referer?.host] { if let k = AppSettings.siteKey(host) { browserBypass[k] = until } }
+        // A refused signed link is usually spent (one-shot token): reopen the page so the site issues a fresh one.
+        var target = item.url
+        if let status = item.lastHTTPStatus, [401, 403, 404, 410].contains(status),
+           let page = item.referer, ["http", "https"].contains(page.scheme?.lowercased() ?? "") {
+            target = page
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        if let bid = item.sourceBrowser.flatMap({ Self.browserBundleIDs[$0] }),
+           let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid) {
+            NSWorkspace.shared.open([target], withApplicationAt: app, configuration: config)
+        } else {
+            NSWorkspace.shared.open(target)
+        }
+        remove(id)
     }
 
     // MARK: - Video (yt-dlp)
@@ -426,9 +526,16 @@ final class DownloadStore: ObservableObject {
 
     func resume(_ id: UUID) {
         guard let i = index(of: id), [.paused, .failed, .cancelled].contains(items[i].state) else { return }
-        update(id) { $0.state = .queued; $0.errorMessage = nil }
+        update(id) { $0.state = .queued; $0.errorMessage = nil; $0.lastHTTPStatus = nil }
         cookielessVideos.remove(id)
         pumpQueue()
+    }
+
+    /// Starts a download that is waiting in the queue (added while "Start new downloads immediately" is off),
+    /// as soon as a connection slot is free.
+    func start(_ id: UUID) {
+        guard let i = index(of: id), items[i].state == .queued else { return }
+        if activeCount < settings.maxConcurrent { startItem(id) }
     }
 
     func cancel(_ id: UUID) {
@@ -460,7 +567,10 @@ final class DownloadStore: ObservableObject {
     }
 
     func pauseAll() { items.filter { $0.state.isActive || $0.state == .queued }.forEach { pause($0.id) } }
-    func resumeAll() { items.filter { [.paused, .failed].contains($0.state) }.forEach { resume($0.id) } }
+    func resumeAll() {
+        items.filter { [.paused, .failed].contains($0.state) }.forEach { resume($0.id) }
+        pumpQueue()   // also starts downloads added while "Start new downloads immediately" is off
+    }
     func clearFinished() {
         items.filter { [.completed, .cancelled].contains($0.state) }.forEach { remove($0.id) }
     }

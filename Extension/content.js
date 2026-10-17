@@ -23,6 +23,8 @@
   }
   refresh();
   setInterval(refresh, 30000);
+  // Coming back from the app (e.g. after a download was handed back to the browser): pick up its site lists now.
+  window.addEventListener('focus', refresh);
 
   function send(msg) {
     return new Promise((resolve) => {
@@ -31,6 +33,15 @@
         else api.runtime.sendMessage(msg, (r) => resolve(api.runtime.lastError ? null : r));
       } catch { resolve(null); }
     });
+  }
+
+  // Sites the user leaves to the browser, plus hosts the app just handed back (see background.js).
+  function leftToBrowser(urlOrHost) {
+    let h = '';
+    try { h = /^https?:/i.test(urlOrHost) ? new URL(urlOrHost).hostname : String(urlOrHost); } catch { return false; }
+    h = h.toLowerCase().replace(/^www\./, '');
+    const list = [...(state.browserOnlySites || []), ...(state.bypassHosts || [])];
+    return !!h && list.some((s) => h === s || h.endsWith('.' + s));
   }
 
   let passThrough = null;   // link re-clicked after the app could not take the download
@@ -44,6 +55,7 @@
     if (a === passThrough) { passThrough = null; return; }
     const href = a.href;
     if (!/^https?:/i.test(href)) return;
+    if (leftToBrowser(location.hostname) || leftToBrowser(href)) return;
     const list = state.captureExtensions || [];
     const m = href.split(/[?#]/)[0].match(/\.([a-z0-9]{1,8})$/i);
     const ext = m ? m[1].toLowerCase() : '';

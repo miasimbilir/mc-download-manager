@@ -1,6 +1,6 @@
 import Foundation
 
-// Native messaging host for Chrome, Brave, Edge and Firefox (Safari uses its app extension instead).
+// Native messaging host for Chrome, Brave, Opera, Edge and Firefox (Safari uses its app extension instead).
 // The browser starts this tool when the extension calls runtime.sendNativeMessage; it understands one
 // request, {"action": "launchApp"}, which starts MC Download Manager in the background so the extension
 // can hand over a download while the app was not running. Nothing else (URLs, cookies) passes through here.

@@ -1,34 +1,77 @@
 import Foundation
 import Combine
 import Network
+import AppKit
 
 /// Yerel HTTP köprüsünü yönetir ve istekleri DownloadStore'a çevirir.
 final class ServerController: ObservableObject {
     @Published var statusText = String(localized: "Not started")
     @Published var running = false
-    /// Last time each browser's extension talked to the bridge (keys: safari, chrome, brave, firefox, other).
+    /// Last time each browser's extension talked to the bridge (keys: safari, chrome, brave, opera, edge, firefox, other).
     @Published var extensionConnections: [String: Date] = [:]
+
+    /// Version each browser's extension reported last ("" for extensions too old to report one).
+    @Published var extensionVersions: [String: String] = [:]
 
     func isExtensionConnected(_ browser: String, within seconds: TimeInterval = 120) -> Bool {
         guard let d = extensionConnections[browser] else { return false }
         return Date().timeIntervalSince(d) < seconds
     }
 
-    private func noteConnection(_ req: HTTPRequest) {
-        var browser = "other"
-        if let origin = req.headers["origin"] {
-            if origin.hasPrefix("safari-web-extension://") { browser = "safari" }
-            else if origin.hasPrefix("chrome-extension://") { browser = "chrome" }
-            else if origin.hasPrefix("moz-extension://") { browser = "firefox" }
+    /// The browser's extension talked to the bridge but runs another version than the one this app carries.
+    /// Safari's extension is part of the app and always current.
+    func isExtensionOutdated(_ browser: String) -> Bool {
+        guard browser != "safari", let v = extensionVersions[browser] else { return false }
+        return v != BrowserIntegration.bundledExtensionVersion
+    }
+
+    private var outdatedPrompted: Set<String> = []
+    private var outdatedPromptShowing = false
+
+    /// An outdated extension that reloads itself reports the new version within a ping or two; ask the user only
+    /// when it is still outdated a little later (extensions older than this check, Firefox's signed add-on).
+    private func checkOutdated(_ browser: String) {
+        guard isExtensionOutdated(browser), !outdatedPrompted.contains(browser) else { return }
+        outdatedPrompted.insert(browser)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+            guard let self, self.isExtensionOutdated(browser) else { self?.outdatedPrompted.remove(browser); return }
+            self.promptOutdated(browser)
         }
-        if let h = req.headers["x-mcdm-extension"]?.lowercased(), ["safari", "chrome", "brave", "edge", "firefox"].contains(h) { browser = h }
-        if let q = req.path.split(separator: "?", maxSplits: 1).last, req.path.contains("?") {
-            for pair in q.split(separator: "&") {
-                let kv = pair.split(separator: "=", maxSplits: 1)
-                if kv.count == 2, kv[0] == "browser" { browser = String(kv[1]).lowercased() }
+    }
+
+    private func promptOutdated(_ browser: String) {
+        guard !outdatedPromptShowing, let kind = BrowserIntegration.Kind(rawValue: browser) else { return }
+        outdatedPromptShowing = true
+        defer { outdatedPromptShowing = false }
+        let old = extensionVersions[browser].flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "an older version")
+        let new = BrowserIntegration.bundledExtensionVersion
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.icon = kind.icon ?? NSApp.applicationIconImage
+        alert.messageText = String(localized: "The \(kind.name) extension is out of date")
+        if kind == .firefox {
+            alert.informativeText = String(localized: "\(kind.name) runs extension \(old), this app comes with \(new). Install the new add-on: Firefox asks you to confirm.")
+            alert.addButton(withTitle: String(localized: "Add to Firefox"))
+        } else {
+            if BrowserIntegration.filesPrepared(for: kind), !BrowserIntegration.filesUpToDate(for: kind) {
+                try? BrowserIntegration.prepareFiles(for: kind)
             }
+            alert.informativeText = String(localized: "\(kind.name) runs extension \(old), this app comes with \(new). The extension folder has been updated; click the reload icon (↻) of MC Download Manager on the extensions page, or restart \(kind.name).")
+            alert.addButton(withTitle: String(localized: "Open Extensions Page"))
         }
+        alert.addButton(withTitle: String(localized: "Later")).keyEquivalent = "\u{1b}"
+        alert.window.level = .floating
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if kind == .firefox { BrowserIntegration.installFirefoxAddon() } else { BrowserIntegration.openExtensionsPage(in: kind) }
+    }
+
+    private func noteConnection(_ req: HTTPRequest) {
+        let browser = Self.browserName(req)
         extensionConnections[browser] = Date()
+        let version = req.headers["x-mcdm-extension-version"] ?? ""
+        if extensionVersions[browser] != version { extensionVersions[browser] = version }
+        checkOutdated(browser)
         // Chromium extension ids may call the native host that launches the app (see NativeHostRegistry).
         var extensionID = req.headers["x-mcdm-extension-id"]
         if let origin = req.headers["origin"], origin.hasPrefix("chrome-extension://") {
@@ -39,12 +82,30 @@ final class ServerController: ObservableObject {
         }
     }
 
+    /// Which browser's extension sent the request (safari, chrome, brave, opera, edge, firefox, other).
+    static func browserName(_ req: HTTPRequest) -> String {
+        var browser = "other"
+        if let origin = req.headers["origin"] {
+            if origin.hasPrefix("safari-web-extension://") { browser = "safari" }
+            else if origin.hasPrefix("chrome-extension://") { browser = "chrome" }
+            else if origin.hasPrefix("moz-extension://") { browser = "firefox" }
+        }
+        if let h = req.headers["x-mcdm-extension"]?.lowercased(), ["safari", "chrome", "brave", "opera", "edge", "firefox"].contains(h) { browser = h }
+        if let q = req.path.split(separator: "?", maxSplits: 1).last, req.path.contains("?") {
+            for pair in q.split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1)
+                if kv.count == 2, kv[0] == "browser" { browser = String(kv[1]).lowercased() }
+            }
+        }
+        return browser
+    }
+
     private var server: LocalServer?
     private let store: DownloadStore
     private let settings: AppSettings
     private var cancellable: AnyCancellable?
 
-    static let version = "1.3.0"
+    static let version = "1.4.1"
 
     init(store: DownloadStore, settings: AppSettings) {
         self.store = store
@@ -136,6 +197,11 @@ final class ServerController: ObservableObject {
                 "ytdlp": VideoDownloader.locateYtDlp(custom: settings.ytdlpPath) != nil,
                 "active": store.items.filter { $0.state.isActive }.count,
                 "captureExtensions": settings.captureExtensions,
+                // Extensions compare this with their own version and reload themselves (unpacked) when it differs.
+                "extensionVersion": BrowserIntegration.bundledExtensionVersion,
+                // Downloads from these sites stay in the browser: permanently, or for a few minutes after a hand-off.
+                "browserOnlySites": settings.browserOnlySites,
+                "bypassHosts": store.bypassHosts,
             ])
 
         case ("GET", "/downloads"):
@@ -169,8 +235,19 @@ final class ServerController: ObservableObject {
             r.kind = (obj["kind"] as? String) == "video" ? .video : .file
             if let h = obj["headers"] as? [String: String] { r.extraHeaders = h }
             if let s = obj["segments"] as? Int { r.segments = s }
+            let browser = Self.browserName(req)
+            if browser != "other" { r.sourceBrowser = browser }
             let item = store.add(r)
             return .json(["ok": true, "id": item.id.uuidString])
+
+        case ("POST", "/site"):
+            guard let obj = (try? JSONSerialization.jsonObject(with: req.body)) as? [String: Any],
+                  let host = obj["host"] as? String, AppSettings.siteKey(host) != nil,
+                  let on = obj["browserOnly"] as? Bool else {
+                return .json(["ok": false, "error": "host and browserOnly required"], status: 400)
+            }
+            settings.setBrowserOnly(host, on)
+            return .json(["ok": true, "browserOnlySites": settings.browserOnlySites])
 
         case ("POST", "/action"):
             guard let obj = (try? JSONSerialization.jsonObject(with: req.body)) as? [String: Any],

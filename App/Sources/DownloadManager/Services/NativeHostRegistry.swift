@@ -22,6 +22,7 @@ enum NativeHostRegistry {
         ("Google/Chrome Beta", .chromium),
         ("BraveSoftware/Brave-Browser", .chromium),
         ("Microsoft Edge", .chromium),
+        ("com.operasoftware.Opera", .chromium),
         ("Chromium", .chromium),
         ("Mozilla", .firefox),
     ]
@@ -41,7 +42,7 @@ enum NativeHostRegistry {
 
     static var allowedChromiumIDs: [String] {
         var ids = reportedIDs
-        for kind in [BrowserIntegration.Kind.chrome, .brave] {
+        for kind in BrowserIntegration.Kind.allCases where kind.isChromium {
             ids.insert(unpackedExtensionID(path: BrowserIntegration.pluginFolder(for: kind).path))
         }
         return ids.sorted()

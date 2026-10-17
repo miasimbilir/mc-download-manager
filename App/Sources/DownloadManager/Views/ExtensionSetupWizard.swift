@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Guided, one-browser-at-a-time setup of the browser extensions (Safari, Chrome, Brave, Firefox).
+/// Guided, one-browser-at-a-time setup of the browser extensions (Safari, Chrome, Brave, Opera, Firefox).
 struct ExtensionSetupWizard: View {
     @EnvironmentObject var server: ServerController
     let browsers: [BrowserIntegration.Kind]
@@ -25,6 +25,7 @@ struct ExtensionSetupWizard: View {
     private var isLastStep: Bool { step >= stepCount - 1 }
     private var isLastBrowser: Bool { browserIndex >= browsers.count - 1 }
     private var connected: Bool { server.isExtensionConnected(browser.rawValue) }
+    private var outdated: Bool { connected && server.isExtensionOutdated(browser.rawValue) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -138,7 +139,7 @@ struct ExtensionSetupWizard: View {
         }
     }
 
-    // MARK: Chrome / Brave
+    // MARK: Chrome / Brave / Opera
 
     @ViewBuilder
     private var chromiumStep: some View {
@@ -156,8 +157,10 @@ struct ExtensionSetupWizard: View {
                 Button("Show in Finder") { BrowserIntegration.revealInFinder(folder) }
                     .disabled(!BrowserIntegration.filesPrepared(for: browser))
             }
-            statusRow(ok: BrowserIntegration.filesPrepared(for: browser) || prepared[browser] != nil,
-                      okText: "Files are ready", pendingText: "Click “Prepare Files”")
+            statusRow(ok: BrowserIntegration.filesUpToDate(for: browser),
+                      okText: "Files are ready (version \(BrowserIntegration.bundledExtensionVersion))",
+                      pendingText: BrowserIntegration.filesPrepared(for: browser)
+                        ? "The folder holds an older version — click “Prepare Files”" : "Click “Prepare Files”")
             Text("Keep this folder in place; the browser loads the extension from it.").font(.caption).foregroundStyle(.secondary)
         case 1:
             stepTitle("Open the extensions page and turn on Developer mode")
@@ -180,8 +183,15 @@ struct ExtensionSetupWizard: View {
             }
         default:
             stepTitle("\(browser.name) is ready")
-            Text("Pin MC Download Manager to the toolbar (puzzle icon ▸ pin). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.")
-            statusRow(ok: connected, okText: "Extension has connected to the app", pendingText: "Waiting for the extension to connect (it connects right after loading)")
+            Text("Pin MC Download Manager to the toolbar (extensions icon ▸ pin). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.")
+            connectionStatus
+            if outdated {
+                Text("The browser still runs an older version. Click the reload icon (↻) of MC Download Manager on the extensions page, or restart the browser.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button { BrowserIntegration.openExtensionsPage(in: browser) } label: {
+                    Label("Open \(browser.extensionsPageURL)", systemImage: "globe")
+                }
+            }
         }
     }
 
@@ -220,11 +230,29 @@ struct ExtensionSetupWizard: View {
         default:
             stepTitle("Firefox is ready")
             Text("Pin MC Download Manager to the toolbar (puzzle icon ▸ gear ▸ Pin to Toolbar). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.")
-            statusRow(ok: connected, okText: "Extension has connected to the app", pendingText: "Waiting for the extension to connect (it connects right after loading)")
+            connectionStatus
+            if outdated {
+                Button { BrowserIntegration.installFirefoxAddon() } label: {
+                    Label("Add to Firefox", systemImage: "puzzlepiece.extension")
+                }
+            }
         }
     }
 
     // MARK: Pieces
+
+    /// Connected and running the version this app carries; an older extension counts as not done.
+    @ViewBuilder
+    private var connectionStatus: some View {
+        if outdated {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text("Connected, but the extension is out of date (\(server.extensionVersions[browser.rawValue].flatMap { $0.isEmpty ? nil : $0 } ?? "?") → \(BrowserIntegration.bundledExtensionVersion))")
+            }
+        } else {
+            statusRow(ok: connected, okText: "Extension has connected to the app", pendingText: "Waiting for the extension to connect (it connects right after loading)")
+        }
+    }
 
     private func stepTitle(_ key: LocalizedStringKey) -> some View {
         Text(key).font(.headline)

@@ -3,14 +3,14 @@ import Foundation
 import Security
 import SafariServices
 
-/// Browser extension helpers. Supported browsers for the guided setup: Safari, Google Chrome, Brave, Firefox.
+/// Browser extension helpers. Supported browsers for the guided setup: Safari, Google Chrome, Brave, Opera, Firefox.
 enum BrowserIntegration {
     static let safariExtensionID = "com.mesutcevik.mcdownloadmanager.safari"
     /// Set this once the extension is published on the Chrome Web Store; the wizard then links to it.
     static let chromeWebStoreURL: URL? = nil
 
     enum Kind: String, CaseIterable, Identifiable {
-        case safari, chrome, brave, firefox
+        case safari, chrome, brave, opera, firefox
         var id: String { rawValue }
 
         var name: String {
@@ -18,6 +18,7 @@ enum BrowserIntegration {
             case .safari: return "Safari"
             case .chrome: return "Google Chrome"
             case .brave: return "Brave"
+            case .opera: return "Opera"
             case .firefox: return "Firefox"
             }
         }
@@ -26,6 +27,7 @@ enum BrowserIntegration {
             case .safari: return "com.apple.Safari"
             case .chrome: return "com.google.Chrome"
             case .brave: return "com.brave.Browser"
+            case .opera: return "com.operasoftware.Opera"
             case .firefox: return "org.mozilla.firefox"
             }
         }
@@ -34,10 +36,11 @@ enum BrowserIntegration {
             case .safari: return ""
             case .chrome: return "chrome://extensions"
             case .brave: return "brave://extensions"
+            case .opera: return "opera://extensions"
             case .firefox: return "about:addons"
             }
         }
-        var isChromium: Bool { self == .chrome || self == .brave }
+        var isChromium: Bool { self == .chrome || self == .brave || self == .opera }
         var appURL: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
         var isInstalled: Bool { appURL != nil }
         var icon: NSImage? { appURL.map { NSWorkspace.shared.icon(forFile: $0.path) } }
@@ -88,6 +91,31 @@ enum BrowserIntegration {
 
     static func filesPrepared(for kind: Kind) -> Bool {
         FileManager.default.fileExists(atPath: pluginFolder(for: kind).appendingPathComponent("manifest.json").path)
+    }
+
+    // MARK: Versions
+
+    private static func manifestVersion(in folder: URL) -> String? {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("manifest.json")),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return obj["version"] as? String
+    }
+
+    /// Version of the extension this app carries; every browser's extension should report the same.
+    static let bundledExtensionVersion: String = manifestVersion(in: bundledExtensionFolder) ?? ServerController.version
+
+    /// Version of the files in the browser's plugin folder (nil when not prepared).
+    static func preparedVersion(for kind: Kind) -> String? { manifestVersion(in: pluginFolder(for: kind)) }
+
+    static func filesUpToDate(for kind: Kind) -> Bool { preparedVersion(for: kind) == bundledExtensionVersion }
+
+    /// After an app update, replaces plugin folders prepared by an older version. Browsers keep running the old
+    /// code until the extension is reloaded; extensions that report their version to the bridge reload themselves
+    /// when the app reports a different one (older ones need the reload icon once). Runs at launch, off the main thread.
+    static func refreshOutdatedPluginFolders() {
+        for kind in Kind.allCases where kind.isChromium && filesPrepared(for: kind) && !filesUpToDate(for: kind) {
+            try? prepareFiles(for: kind)
+        }
     }
 
     // MARK: Safari

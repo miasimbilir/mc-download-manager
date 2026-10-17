@@ -200,12 +200,21 @@ struct ContentView: View {
         } else {
             Button("Open Download Window") { ids.forEach { DetailWindowManager.shared.show(id: $0, store: store) } }
             Divider()
+            if items.contains(where: { $0.state == .queued }) {
+                Button("Start Download") { ids.forEach { store.start($0) } }
+            }
             if items.contains(where: { $0.state.isActive || $0.state == .queued }) {
                 Button("Pause") { ids.forEach { store.pause($0) } }
                 Button("Cancel") { ids.forEach { store.cancel($0) } }
             }
             if items.contains(where: { [.paused, .failed, .cancelled].contains($0.state) }) {
                 Button("Resume / Retry") { ids.forEach { store.resume($0) } }
+            }
+            if items.contains(where: { $0.kind == .file && $0.state == .failed }) {
+                Button("Download in Browser") {
+                    items.filter { $0.kind == .file && $0.state == .failed }.forEach { store.handOffToBrowser($0.id) }
+                    selection.subtract(ids)
+                }
             }
             if items.count == 1, let item = items.first {
                 Divider()

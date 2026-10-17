@@ -50,15 +50,17 @@ struct DownloadItem: Identifiable, Codable, Equatable {
     var completedAt: Date? = nil
     var finalPath: String? = nil
     var requestedSegments: Int = 0      // 0 = ayarlardaki değer
+    var sourceBrowser: String? = nil    // extension that sent it (chrome, brave, opera, edge, firefox, safari)
 
     // Kalıcı olmayan alanlar
     var speed: Double = 0
     var log: String = ""
     var stage: String = ""      // yt-dlp: current phase (downloading video/audio, merging…)
+    var lastHTTPStatus: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, url, fileName, directory, kind, state, totalBytes, receivedBytes, supportsRanges,
-             segments, headers, cookieFile, errorMessage, createdAt, completedAt, finalPath, requestedSegments
+             segments, headers, cookieFile, errorMessage, createdAt, completedAt, finalPath, requestedSegments, sourceBrowser
     }
 
     var destinationURL: URL { directory.appendingPathComponent(fileName) }
@@ -76,6 +78,7 @@ struct DownloadItem: Identifiable, Codable, Equatable {
 
 struct DownloadFailure: LocalizedError {
     let message: String
+    var local = false           // disk/file problem: a browser would not do better
     var errorDescription: String? { message }
 }
 
@@ -136,4 +139,5 @@ enum FileCategory: String, CaseIterable, Identifiable, Codable {
 extension DownloadItem {
     var category: FileCategory { FileCategory.detect(fileName: fileName, kind: kind) }
     var isFinished: Bool { state == .completed }
+    var referer: URL? { headers["Referer"].flatMap { URL(string: $0) } }
 }

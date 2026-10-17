@@ -44,10 +44,17 @@ struct DownloadDetailView: View {
                     .font(.callout)
                 Spacer()
                 switch item.state {
-                case .downloading, .probing, .queued:
+                case .queued:
+                    // Added while "Start new downloads immediately" is off, or waiting for a free slot.
+                    Button("Start Download") { store.start(item.id) }.keyboardShortcut(.defaultAction)
+                    Button("Cancel") { store.cancel(item.id) }
+                case .downloading, .probing:
                     Button("Pause") { store.pause(item.id) }
                     Button("Cancel") { store.cancel(item.id) }
                 case .paused, .failed, .cancelled:
+                    if item.state == .failed, item.kind == .file {
+                        Button("Download in Browser") { store.handOffToBrowser(item.id); DetailWindowManager.shared.close(id: item.id) }
+                    }
                     Button("Resume") { store.resume(item.id) }.keyboardShortcut(.defaultAction)
                     Button("Remove from List") { store.remove(item.id); DetailWindowManager.shared.close(id: item.id) }
                 case .completed:
@@ -157,7 +164,7 @@ struct DownloadDetailView: View {
                 Button("Close") { DetailWindowManager.shared.close(id: item.id) }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Show in Finder") { store.revealInFinder(item) }
+                Button("Show in Finder") { store.revealInFinder(item); DetailWindowManager.shared.closeIfAlone(id: item.id) }
                 Button("Open") { store.open(item); DetailWindowManager.shared.close(id: item.id) }
                     .keyboardShortcut(.defaultAction)
             }
@@ -235,42 +242,126 @@ struct DownloadDetailView: View {
     }
 }
 
-/// Dosya özelindeki pencereleri AppKit ile yönetir; böylece SwiftUI ortamı olmadan
-/// (örneğin tarayıcıdan gelen istekte) her yerden açılabilir.
+/// Downloads shown in the shared download window, and which one is selected.
+final class DownloadPanelModel: ObservableObject {
+    @Published var tracked: [UUID] = []
+    @Published var selected: UUID?
+}
+
+/// The download window: one download's details, plus a list on the left while it tracks several downloads.
+struct DownloadPanelView: View {
+    @ObservedObject var model: DownloadPanelModel
+    @EnvironmentObject var store: DownloadStore
+
+    var body: some View {
+        if model.tracked.count > 1 {
+            HStack(spacing: 0) {
+                List(selection: $model.selected) {
+                    ForEach(model.tracked, id: \.self) { id in
+                        if let item = store.items.first(where: { $0.id == id }) {
+                            PanelRow(item: item).tag(id)
+                        }
+                    }
+                }
+                .listStyle(.sidebar)
+                .frame(width: DetailWindowManager.listWidth)
+                Divider()
+                detail
+            }
+        } else {
+            detail
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        if let id = model.selected ?? model.tracked.first {
+            DownloadDetailView(id: id)
+                .id(id)   // fresh state (details toggle) for each download
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+}
+
+private struct PanelRow: View {
+    let item: DownloadItem
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: item.state == .completed ? "checkmark.circle.fill" : item.category.symbol)
+                .foregroundStyle(item.state == .completed ? .green : item.state == .failed ? .red : .secondary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.fileName).lineLimit(1).truncationMode(.middle)
+                if item.state.isActive || item.state == .paused {
+                    ProgressView(value: item.totalBytes > 0 ? item.progress : 0)
+                        .progressViewStyle(.linear)
+                        .controlSize(.small)
+                }
+                Text(status).font(.caption).foregroundStyle(item.state == .failed ? .red : .secondary).lineLimit(1)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var status: String {
+        switch item.state {
+        case .downloading:
+            let pct = item.totalBytes > 0 ? "\(Int(item.progress * 100))%" : Fmt.size(item.receivedBytes)
+            return item.speed > 0 ? "\(pct) · \(Fmt.speed(item.speed))" : pct
+        case .completed: return Fmt.size(item.totalBytes)
+        default: return item.state.label
+        }
+    }
+}
+
+/// The shared download window, managed with AppKit so it can open from anywhere
+/// (for example on a request from the browser) without a SwiftUI scene.
 final class DetailWindowManager {
     static let shared = DetailWindowManager()
-    private var windows: [UUID: NSWindow] = [:]
-    private var observers: [UUID: Any] = [:]
+    private var window: NSWindow?
+    private var observer: Any?
+    private let model = DownloadPanelModel()
+    private var compact = false
 
     static let fullHeight: CGFloat = 540
     static let compactHeight: CGFloat = 290
     static let completedHeight: CGFloat = 250
+    static let detailWidth: CGFloat = 560
+    static let listWidth: CGFloat = 230
+
+    private var showsList: Bool { model.tracked.count > 1 }
 
     func show(id: UUID, store: DownloadStore) {
         AppPresence.shared.showInDock()
-        if let w = windows[id] {
+        let hadList = showsList
+        if !model.tracked.contains(id) { model.tracked.append(id) }
+        model.selected = id
+        if let w = window {
+            if showsList != hadList { layout(store: store, animate: true) }
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let root = DownloadDetailView(id: id)
+        let root = DownloadPanelView(model: model)
             .environmentObject(store)
             .environmentObject(store.settings)
-        let completed = store.items.first { $0.id == id }?.state == .completed
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: completed ? Self.completedHeight : Self.fullHeight),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Self.detailWidth, height: Self.fullHeight),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
                          backing: .buffered, defer: false)
         w.contentView = NSHostingView(rootView: root)
         w.isReleasedWhenClosed = false
-        w.title = store.items.first { $0.id == id }?.fileName ?? String(localized: "Download")
+        window = w
+        compact = false
+        layout(store: store, animate: false)
         w.center()
-        if let last = windows.values.first?.frame {
-            w.setFrameTopLeftPoint(NSPoint(x: last.minX + 24, y: last.maxY - 24))
-        }
-        windows[id] = w
-        observers[id] = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
-            self?.windows[id] = nil
-            if let o = self?.observers.removeValue(forKey: id) { NotificationCenter.default.removeObserver(o) }
+        refreshTitles(items: store.items)
+        observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.window = nil
+            self.model.tracked = []
+            self.model.selected = nil
+            if let o = self.observer { NotificationCenter.default.removeObserver(o); self.observer = nil }
         }
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -281,40 +372,77 @@ final class DetailWindowManager {
         }
     }
 
+    /// Takes a download out of the window; closes the window when it was the last one.
     func close(id: UUID) {
-        windows[id]?.close()
+        guard let i = model.tracked.firstIndex(of: id) else { return }
+        guard model.tracked.count > 1 else { window?.close(); return }
+        model.tracked.remove(at: i)
+        if model.selected == id { model.selected = model.tracked[min(i, model.tracked.count - 1)] }
+        if let store = AppDelegate.sharedStore { layout(store: store, animate: true) }
+    }
+
+    /// Closes the window when it shows only this download; with other downloads in the list it stays open.
+    /// Closing the window never stops a download: the main window still lists and controls it.
+    func closeIfAlone(id: UUID) {
+        if model.tracked == [id] { window?.close() }
     }
 
     func resize(id: UUID, compact: Bool) {
-        setHeight(id: id, compact ? Self.compactHeight : Self.fullHeight)
+        self.compact = compact
+        if let store = AppDelegate.sharedStore { layout(store: store, animate: true) }
     }
 
     /// İndirme bitince: otomatik kapat ya da "tamamlandı" boyutuna küçült.
     func didComplete(id: UUID, autoClose: Bool) {
-        guard windows[id] != nil else { return }
+        guard model.tracked.contains(id) else { return }
         if autoClose {
             close(id: id)
-        } else {
-            setHeight(id: id, Self.completedHeight)
+        } else if let store = AppDelegate.sharedStore {
+            layout(store: store, animate: true)
         }
     }
 
-    private func setHeight(id: UUID, _ height: CGFloat) {
-        guard let w = windows[id] else { return }
+    /// Size for what is shown: the list keeps a full-height window; a single download sizes to its view.
+    private func layout(store: DownloadStore, animate: Bool) {
+        guard let w = window else { return }
+        let width = Self.detailWidth + (showsList ? Self.listWidth : 0)
+        var height = Self.fullHeight
+        if !showsList, let id = model.tracked.first, let item = store.items.first(where: { $0.id == id }) {
+            height = item.state == .completed ? Self.completedHeight : (compact ? Self.compactHeight : Self.fullHeight)
+        }
+        w.contentMinSize = NSSize(width: width, height: min(height, Self.completedHeight))
         var frame = w.frame
-        let delta = height - w.contentRect(forFrameRect: frame).height
-        frame.size.height += delta
-        frame.origin.y -= delta
-        w.setFrame(frame, display: true, animate: true)
+        let content = w.contentRect(forFrameRect: frame)
+        let dh = height - content.height
+        frame.size.height += dh
+        frame.origin.y -= dh
+        frame.size.width += width - content.width
+        w.setFrame(frame, display: true, animate: animate)
     }
 
-    /// Başlıkları ilerlemeye göre günceller ("%24 · dosya.zip").
+    /// Başlığı ilerlemeye göre günceller ("%24 · dosya.zip" ya da "%40 · 3 indirme").
     func refreshTitles(items: [DownloadItem]) {
-        for (id, w) in windows {
-            guard let item = items.first(where: { $0.id == id }) else { continue }
-            let pct = item.totalBytes > 0 && item.state != .completed ? "\(Int(item.progress * 100))% · " : ""
-            let title = pct + item.fileName
-            if w.title != title { w.title = title }
+        guard let w = window else { return }
+        // Downloads removed from the main list leave the window too.
+        let live = model.tracked.filter { id in items.contains { $0.id == id } }
+        if live.isEmpty { if !model.tracked.isEmpty { w.close() }; return }
+        if live != model.tracked {
+            model.tracked = live
+            if let s = model.selected, !live.contains(s) { model.selected = live.first }
+            if let store = AppDelegate.sharedStore { layout(store: store, animate: true) }
         }
+        let shown = live.compactMap { id in items.first { $0.id == id } }
+        let title: String
+        if shown.count == 1, let item = shown.first {
+            let pct = item.totalBytes > 0 && item.state != .completed ? "\(Int(item.progress * 100))% · " : ""
+            title = pct + item.fileName
+        } else {
+            let measurable = shown.filter { $0.state.isActive && $0.totalBytes > 0 }
+            let total = measurable.reduce(Int64(0)) { $0 + $1.totalBytes }
+            let got = measurable.reduce(Int64(0)) { $0 + min($1.receivedBytes, $1.totalBytes) }
+            let pct = total > 0 ? "\(Int(Double(got) * 100 / Double(total)))% · " : ""
+            title = pct + String(localized: "\(shown.count) downloads")
+        }
+        if w.title != title { w.title = title }
     }
 }

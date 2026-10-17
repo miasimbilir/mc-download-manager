@@ -159,7 +159,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         AppPresence.shared.finishLaunch()
         LoginItem.registerByDefaultIfNeeded()
         DispatchQueue.global(qos: .utility).async { NativeHostRegistry.register() }
-        if AppSettings.shared.onboardingDone { Self.sharedStore?.prepareDownloadFolder() }
+        if AppSettings.shared.onboardingDone {
+            Self.sharedStore?.prepareDownloadFolder()
+            // Plugin folders live under the download folder: only touch them once its access was granted.
+            DispatchQueue.global(qos: .utility).async { BrowserIntegration.refreshOutdatedPluginFolders() }
+        }
         if Bundle.main.bundleURL.pathExtension == "app" {
             let center = UNUserNotificationCenter.current()
             center.delegate = self

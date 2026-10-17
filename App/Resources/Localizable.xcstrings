@@ -2432,16 +2432,6 @@
         }
       }
     },
-    "Pin MC Download Manager to the toolbar (puzzle icon ▸ pin). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.": {
-      "localizations": {
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "MC Download Manager'ı araç çubuğuna sabitleyin (yapboz simgesi ▸ sabitle). Açılır penceresi “Bağlı” göstermeli. Yakalanan dosya türlerindeki indirmeler artık uygulamaya aktarılır."
-          }
-        }
-      }
-    },
     "Waiting for the extension to connect (it connects right after loading)": {
       "localizations": {
         "tr": {
@@ -3142,12 +3132,262 @@
         }
       }
     },
-    "The guided setup walks you through each installed browser one at a time: Safari (built in, just enable it), Google Chrome and Brave (loaded from a folder), Firefox (signed add-on, one click).": {
+    "Download in the browser instead?": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rehberli kurulum, kurulu her tarayıcıda sizi adım adım yönlendirir: Safari (yerleşik, yalnızca etkinleştirin), Google Chrome ve Brave (klasörden yüklenir), Firefox (imzalı eklenti, tek tık)."
+            "value": "Bunun yerine tarayıcıda indirilsin mi?"
+          }
+        }
+      }
+    },
+    "“%@” could not be downloaded: %@\n\nSome sites (for example WeTransfer) only allow their downloads in a browser. MC Download Manager can hand this download back to the browser.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” indirilemedi: %@\n\nBazı siteler (örneğin WeTransfer) dosyalarının yalnızca tarayıcıda indirilmesine izin verir. MC Download Manager bu indirmeyi tarayıcıya geri aktarabilir."
+          }
+        }
+      }
+    },
+    "Download in Browser": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarayıcıda İndir"
+          }
+        }
+      }
+    },
+    "Retry Here": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Burada Yeniden Dene"
+          }
+        }
+      }
+    },
+    "Always leave downloads from %@ to the browser": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ indirmelerini her zaman tarayıcıya bırak"
+          }
+        }
+      }
+    },
+    "Sites left to the browser": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarayıcıya bırakılan siteler"
+          }
+        }
+      }
+    },
+    "Downloads from these sites are not captured; the browser downloads them itself. Add a site from the extension's menu (“Leave this site's downloads to the browser”) or when a download fails.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu sitelerden yapılan indirmeler yakalanmaz; tarayıcı kendisi indirir. Site eklemek için eklenti menüsündeki “… indirmelerini tarayıcıya bırak” seçeneğini kullanın ya da bir indirme başarısız olduğunda çıkan soruda işaretleyin."
+          }
+        }
+      }
+    },
+    "No sites": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Site yok"
+          }
+        }
+      }
+    },
+    "Capture downloads from this site again": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu sitenin indirmelerini yeniden yakala"
+          }
+        }
+      }
+    },
+    "%lld downloads": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld indirme"
+          }
+        }
+      }
+    },
+    "Start Download": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İndirmeyi Başlat"
+          }
+        }
+      }
+    },
+    "The guided setup walks you through each installed browser one at a time: Safari (built in, just enable it), Google Chrome, Brave and Opera (loaded from a folder), Firefox (signed add-on, one click).": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rehberli kurulum, kurulu her tarayıcıda sizi adım adım yönlendirir: Safari (yerleşik, yalnızca etkinleştirin), Google Chrome, Brave ve Opera (klasörden yüklenir), Firefox (imzalı eklenti, tek tık)."
+          }
+        }
+      }
+    },
+    "Pin MC Download Manager to the toolbar (extensions icon ▸ pin). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MC Download Manager'ı araç çubuğuna sabitleyin (uzantılar simgesi ▸ sabitle). Açılır penceresi “Bağlı” göstermeli. Yakalanan dosya türlerindeki indirmeler artık uygulamaya aktarılır."
+          }
+        }
+      }
+    },
+    "an older version": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "eski bir sürüm"
+          }
+        }
+      }
+    },
+    "The %@ extension is out of date": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ eklentisi güncel değil"
+          }
+        }
+      }
+    },
+    "%@ runs extension %@, this app comes with %@. Install the new add-on: Firefox asks you to confirm.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, eklentinin %2$@ sürümünü çalıştırıyor; bu uygulama %3$@ sürümüyle geliyor. Yeni eklentiyi kurun, Firefox onayınızı isteyecek."
+          }
+        }
+      }
+    },
+    "%@ runs extension %@, this app comes with %@. The extension folder has been updated; click the reload icon (↻) of MC Download Manager on the extensions page, or restart %@.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, eklentinin %2$@ sürümünü çalıştırıyor; bu uygulama %3$@ sürümüyle geliyor. Eklenti klasörü güncellendi; eklentiler sayfasında MC Download Manager'ın yenile simgesine (↻) tıklayın ya da %4$@ tarayıcısını yeniden başlatın."
+          }
+        }
+      }
+    },
+    "Open Extensions Page": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eklentiler Sayfasını Aç"
+          }
+        }
+      }
+    },
+    "Update needed (%@ → %@)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Güncelleme gerekli (%1$@ → %2$@)"
+          }
+        }
+      }
+    },
+    "Connected (%@)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bağlı (%@)"
+          }
+        }
+      }
+    },
+    "Files from an older version": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eski sürüme ait dosyalar"
+          }
+        }
+      }
+    },
+    "Files prepared, not connected": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dosyalar hazır, bağlı değil"
+          }
+        }
+      }
+    },
+    "Files are ready (version %@)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dosyalar hazır (sürüm %@)"
+          }
+        }
+      }
+    },
+    "The folder holds an older version — click “Prepare Files”": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klasörde eski bir sürüm var — “Dosyaları Hazırla”ya tıklayın"
+          }
+        }
+      }
+    },
+    "The browser still runs an older version. Click the reload icon (↻) of MC Download Manager on the extensions page, or restart the browser.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarayıcı hâlâ eski sürümü çalıştırıyor. Eklentiler sayfasında MC Download Manager'ın yenile simgesine (↻) tıklayın ya da tarayıcıyı yeniden başlatın."
+          }
+        }
+      }
+    },
+    "Connected, but the extension is out of date (%@ → %@)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bağlı, ancak eklenti güncel değil (%1$@ → %2$@)"
           }
         }
       }

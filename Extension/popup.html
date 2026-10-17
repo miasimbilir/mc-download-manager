@@ -19,10 +19,16 @@
     <button id="launch" class="hidden" data-i18n="popupLaunch">Open App</button>
   </div>
 
+  <div id="outdated" class="box hidden">
+    <span id="outdatedText"></span>
+    <button id="reloadExt" class="hidden" data-i18n="popupReloadExt">Update Now</button>
+  </div>
+
   <section class="controls">
     <label class="toggle"><input type="checkbox" id="intercept"> <span data-i18n="popupIntercept">Send downloads to the app</span></label>
     <label class="toggle"><input type="checkbox" id="sniff"> <span data-i18n="popupSniff">Capture videos on pages</span></label>
     <label class="toggle"><input type="checkbox" id="autoLaunch"> <span data-i18n="popupAutoLaunch">Open the app when a download arrives</span></label>
+    <label class="toggle hidden" id="siteRow"><input type="checkbox" id="siteBrowserOnly"> <span id="siteLabel"></span></label>
   </section>
 
   <section>

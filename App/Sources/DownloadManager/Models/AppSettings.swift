@@ -32,6 +32,21 @@ final class AppSettings: ObservableObject {
     /// The user chose “Don't ask again” on the deno install prompt for YouTube downloads.
     @Published var denoPromptSuppressed: Bool { didSet { defaults.set(denoPromptSuppressed, forKey: "denoPromptSuppressed") } }
 
+    /// Sites whose downloads stay in the browser (hosts without "www."; subdomains match too).
+    @Published var browserOnlySites: [String] { didSet { defaults.set(browserOnlySites, forKey: "browserOnlySites") } }
+
+    static func siteKey(_ host: String?) -> String? {
+        guard var h = host?.lowercased().trimmingCharacters(in: .whitespaces), !h.isEmpty else { return nil }
+        if h.hasPrefix("www.") { h.removeFirst(4) }
+        return h
+    }
+
+    func setBrowserOnly(_ host: String?, _ on: Bool) {
+        guard let key = Self.siteKey(host) else { return }
+        if on { if !browserOnlySites.contains(key) { browserOnlySites.append(key); browserOnlySites.sort() } }
+        else { browserOnlySites.removeAll { $0 == key } }
+    }
+
     /// All file extensions (lowercase, no dot) the app should capture.
     var captureExtensions: [String] { CaptureTypes.extensions(groupIDs: captureGroupIDs, custom: customExtensions) }
 
@@ -63,6 +78,7 @@ final class AppSettings: ObservableObject {
         hideDockIcon = defaults.object(forKey: "hideDockIcon") as? Bool ?? true
         loginItemAutoRegistered = defaults.object(forKey: "loginItemAutoRegistered") as? Bool ?? false
         denoPromptSuppressed = defaults.object(forKey: "denoPromptSuppressed") as? Bool ?? false
+        browserOnlySites = defaults.stringArray(forKey: "browserOnlySites") ?? []
     }
 
     /// yt-dlp arguments for the chosen format/quality.

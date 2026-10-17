@@ -90,21 +90,31 @@ public sealed class SegmentedDownloader
             }
             else
             {
-                var probe = await ProbeAsync(ct).ConfigureAwait(false);
-                OnProbe?.Invoke(probe);
-                var count = probe.SupportsRanges
-                    ? (int)Math.Max(1, Math.Min(config.SegmentCount, probe.TotalBytes / config.MinSegmentSize))
-                    : 1;
-                if (probe.SupportsRanges && count > 1)
+                ProbeResult? probe = null;
+                try { probe = await ProbeAsync(ct).ConfigureAwait(false); }
+                // Some servers (signed / one-shot links, anti download-manager checks) refuse a Range request
+                // but serve the plain GET a browser would send: try that once before giving up.
+                catch (HttpStatusError e) when (!IsThrottle(e.Status)) { }
+                if (probe == null)
                 {
-                    segments = MakeSegments(probe.TotalBytes, count);
-                    OpenFile(create: true, preallocate: probe.TotalBytes);
-                    await RunMultiAsync(ct).ConfigureAwait(false);
+                    await RunSingleAsync(ct, reportProbe: true).ConfigureAwait(false);
                 }
                 else
                 {
-                    OpenFile(create: true, preallocate: null);
-                    await RunSingleAsync(ct).ConfigureAwait(false);
+                    OnProbe?.Invoke(probe);
+                    var count = probe.SupportsRanges
+                        ? (int)Math.Max(1, Math.Min(config.SegmentCount, probe.TotalBytes / config.MinSegmentSize))
+                        : 1;
+                    if (probe.SupportsRanges && count > 1)
+                    {
+                        segments = MakeSegments(probe.TotalBytes, count);
+                        OpenFile(create: true, preallocate: probe.TotalBytes);
+                        await RunMultiAsync(ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await RunSingleAsync(ct).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -282,7 +292,7 @@ public sealed class SegmentedDownloader
         }
         catch (Exception e) when (e is not DownloadFailure)
         {
-            throw new DownloadFailure(Loc.T("Could not create file: {0}", config.PartPath) + " — " + e.Message);
+            throw new DownloadFailure(Loc.T("Could not create file: {0}", config.PartPath) + " — " + e.Message, local: true);
         }
     }
 
@@ -438,20 +448,22 @@ public sealed class SegmentedDownloader
                         // The server ignored Range: start over as a single stream.
                         lock (gate) { fallback = true; multi.Cancel(); }
                     }
-                    else if (status is 408 or 425 or 429 or 500 or 502 or 503 or 504)
+                    else if (IsThrottle(status))
                     {
                         lock (gate) Throttle(i, status);
                     }
                     else
                     {
-                        lock (gate) Fatal(new HttpStatusError(status));
+                        // 401/403/410…: the server answered the probe but refuses parallel connections — continue on one,
+                        // the way a browser downloads.
+                        lock (gate) { fallback = true; multi.Cancel(); }
                     }
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
             catch (DiskWriteException e)
             {
-                lock (gate) Fatal(new DownloadFailure(e.Message));
+                lock (gate) Fatal(new DownloadFailure(e.Message, local: true));
             }
             catch (Exception e)
             {
@@ -497,9 +509,8 @@ public sealed class SegmentedDownloader
         if (fatal != null) throw fatal;
         if (fallback)
         {
-            CloseFile();
-            lock (gate) segments = [];
-            OpenFile(create: true, preallocate: null);
+            // The part file and the segment state stay as they are until the single stream is actually served:
+            // a refused resume (an expired link) can still be resumed later with fresh cookies.
             await RunSingleAsync(stop).ConfigureAwait(false);
             return;
         }
@@ -509,18 +520,31 @@ public sealed class SegmentedDownloader
         }
     }
 
+    /// Statuses that mean "slow down / try again later" rather than "no".
+    internal static bool IsThrottle(int status) => status is 408 or 425 or 429 or 500 or 502 or 503 or 504;
+
     // ---- Single stream (no Range support) ----
 
-    private async Task RunSingleAsync(CancellationToken ct)
+    /// `reportProbe`: the Range probe was refused, so this plain GET also reports what a probe would have.
+    private async Task RunSingleAsync(CancellationToken ct, bool reportProbe = false)
     {
-        lock (gate) { single = true; singleReceived = 0; }
-        var (resp, _) = await SendAsync(null, ct).ConfigureAwait(false);
+        var (resp, finalUrl) = await SendAsync(null, ct).ConfigureAwait(false);
         using (resp)
         {
             var status = (int)resp.StatusCode;
             if (status is < 200 or > 299) throw new HttpStatusError(status);
+            // From here on the download starts over as one stream into a fresh part file.
+            CloseFile();
+            lock (gate) { segments = []; single = true; singleReceived = 0; }
+            OpenFile(create: true, preallocate: null);
             // The real GET may differ from the probe (dynamic responses); trust its Content-Length.
             var total = resp.Content.Headers.ContentLength is > 0 and var n ? n : -1;
+            if (reportProbe)
+            {
+                requestUrl = finalUrl;
+                OnProbe?.Invoke(new ProbeResult(total, false, FileNameFromContentDisposition(Header(resp, "Content-Disposition")),
+                    Header(resp, "Content-Type")?.Split(';')[0].Trim(), finalUrl));
+            }
             try
             {
                 await CopyAsync(resp,
@@ -530,7 +554,7 @@ public sealed class SegmentedDownloader
             }
             catch (DiskWriteException e)
             {
-                throw new DownloadFailure(e.Message);
+                throw new DownloadFailure(e.Message, local: true);
             }
             long got;
             lock (gate) got = singleReceived;

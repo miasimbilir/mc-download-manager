@@ -195,7 +195,7 @@ public sealed class WizardWindow : Window
 
             default:
                 body.Children.Add(Ui.Text(Loc.T("{0} is ready", b.Name), "section"));
-                body.Children.Add(Ui.Text(Loc.T("Pin MC Download Manager to the toolbar (puzzle icon ▸ pin). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.")));
+                body.Children.Add(Ui.Text(Loc.T("Pin MC Download Manager to the toolbar (extensions icon ▸ pin). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.")));
                 body.Children.Add(Ui.StatusRow(Connected, Loc.T("Extension has connected to the app"), Loc.T("Waiting for the extension to connect (it connects right after loading)")));
                 if (Outdated)
                     body.Children.Add(Ui.Text(Loc.T("{0} is still running an older version of the extension. Open its extensions page and click “Reload” (the round arrow) on the MC Download Manager card.", b.Name), "caption").Resource(TextBlock.ForegroundProperty, "WarnBrush"));
@@ -209,7 +209,7 @@ public sealed class WizardWindow : Window
         if (step > 0)
         {
             body.Children.Add(Ui.Text(Loc.T("{0} is ready", b.Name), "section"));
-            body.Children.Add(Ui.Text(Loc.T("Pin MC Download Manager to the toolbar (puzzle icon ▸ pin). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.")));
+            body.Children.Add(Ui.Text(Loc.T("Pin MC Download Manager to the toolbar (extensions icon ▸ pin). Its popup should show “Connected”. Downloads of the captured file types are now handed to the app.")));
             body.Children.Add(Ui.StatusRow(Connected, Loc.T("Extension has connected to the app"), Loc.T("Waiting for the extension to connect (it connects right after loading)")));
             if (Outdated)
                 body.Children.Add(Ui.Text(Loc.T("Firefox is still running an older version of the add-on. Go back one step and add it again."), "caption").Resource(TextBlock.ForegroundProperty, "WarnBrush"));

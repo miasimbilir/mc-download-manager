@@ -1,6 +1,6 @@
 # winget manifest (default locale).
 PackageIdentifier: miasimbilir.MCDownloadManager
-PackageVersion: 2.0.0
+PackageVersion: 2.1.0
 PackageLocale: en-US
 Publisher: MC Download Manager contributors
 PublisherUrl: https://github.com/miasimbilir/mc-download-manager

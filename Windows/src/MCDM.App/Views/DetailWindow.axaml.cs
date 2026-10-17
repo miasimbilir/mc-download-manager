@@ -38,6 +38,7 @@ public partial class DetailWindow : Window
             if (item.State is DownloadState.downloading or DownloadState.probing or DownloadState.queued) app.Store.Cancel(item.Id);
             else { app.Store.Remove(item.Id); Close(); }
         };
+        BrowserButton.Click += (_, _) => { app.Store.HandOffToBrowser(item.Id); Close(); };
         DoneClose.Click += (_, _) => Close();
         DoneReveal.Click += (_, _) => app.Store.Reveal(item);
         DoneOpen.Click += (_, _) => { app.Store.Open(item); Close(); };
@@ -104,6 +105,10 @@ public partial class DetailWindow : Window
         PrimaryButton.Content = waiting ? Loc.T("Download") : running ? Loc.T("Pause") : Loc.T("Resume");
         PrimaryButton.Classes.Set("accent", !running || waiting);
         SecondaryButton.Content = running ? Loc.T("Cancel") : Loc.T("Remove from List");
+        // A file the server refused may still come down in the browser (its own cookies, one connection).
+        var handOff = item.State == DownloadState.failed && item.Kind == DownloadKind.file;
+        BrowserButton.IsVisible = handOff;
+        CloseWhenDone.IsVisible = !handOff;
 
         DetailsPanel.IsVisible = showDetails;
         if (!showDetails) return;

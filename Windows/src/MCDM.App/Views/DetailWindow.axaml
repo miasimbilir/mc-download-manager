@@ -42,11 +42,12 @@
 
       <c:SegmentBar x:Name="Bar" Height="7" Track="{DynamicResource TrackBrush}" Fill="{DynamicResource AccentBrush}" />
 
-      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
         <Button x:Name="ToggleDetails" MinWidth="130" HorizontalContentAlignment="Center" />
         <CheckBox Grid.Column="1" x:Name="CloseWhenDone" Content="{l:T 'Close when completed'}" Margin="14,0,0,0" />
-        <Button Grid.Column="3" x:Name="PrimaryButton" MinWidth="92" HorizontalContentAlignment="Center" />
-        <Button Grid.Column="4" x:Name="SecondaryButton" MinWidth="92" HorizontalContentAlignment="Center" Margin="8,0,0,0" />
+        <Button Grid.Column="3" x:Name="BrowserButton" Content="{l:T 'Download in Browser'}" MinWidth="92" HorizontalContentAlignment="Center" Margin="0,0,8,0" IsVisible="False" />
+        <Button Grid.Column="4" x:Name="PrimaryButton" MinWidth="92" HorizontalContentAlignment="Center" />
+        <Button Grid.Column="5" x:Name="SecondaryButton" MinWidth="92" HorizontalContentAlignment="Center" Margin="8,0,0,0" />
       </Grid>
 
       <StackPanel x:Name="DetailsPanel" Spacing="8">

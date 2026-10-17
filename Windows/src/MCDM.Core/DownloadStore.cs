@@ -21,6 +21,8 @@ public sealed class NewDownloadRequest(Uri url)
     public bool Confirm { get; set; }
     /// The user asked for another copy of something that was already downloaded.
     public bool AllowDuplicate { get; set; }
+    /// The browser whose extension sent it (chrome, edge, brave, opera, firefox).
+    public string? SourceBrowser { get; set; }
 }
 
 public enum DownloadDecision { Start, Later, Cancel }
@@ -35,6 +37,14 @@ public enum DuplicateDecision { Open, Reveal, DownloadAgain, Cancel }
 
 /// What to do with the computer once nothing is left to download. Chosen for one run of the queue.
 public enum QueueEndAction { None, Sleep, Shutdown }
+
+public enum HandOffDecision { Browser, Retry, Close }
+
+/// The answer to "download in the browser instead?". `Always`: leave this site's downloads to the browser from now on.
+public sealed record HandOffAnswer(HandOffDecision Decision, bool Always = false)
+{
+    public static HandOffAnswer Close { get; } = new(HandOffDecision.Close);
+}
 
 public sealed record BrowserCookie(string Name, string Value, string Domain, string Path, bool Secure, double ExpirationDate);
 
@@ -56,6 +66,9 @@ public interface IStoreUi
     Task<DuplicateDecision> AskDuplicateAsync(DownloadItem existing) => Task.FromResult(DuplicateDecision.DownloadAgain);
     /// The last download ended and the user asked for the computer to sleep or shut down after that.
     void QueueFinished(QueueEndAction action) { }
+    /// A file the app could not get (the server refused it): offer to download it in the browser instead.
+    /// `site` is the site the download belongs to. Without a UI: leave it failed.
+    Task<HandOffAnswer> AskHandOffAsync(DownloadItem item, string site) => Task.FromResult(HandOffAnswer.Close);
 }
 
 public sealed class NoUi : IStoreUi
@@ -98,6 +111,11 @@ public sealed class DownloadStore
     /// Playlists: which video yt-dlp is at.
     private readonly Dictionary<Guid, (int Index, int Count)> playlistPosition = [];
     private QueueEndAction whenDone;
+    /// Failed downloads waiting for the "download in the browser instead?" question, one at a time.
+    private readonly List<Guid> handOffQueue = [];
+    private bool handOffAsking;
+    /// Sites the extensions must leave to the browser for a few minutes (a download was just handed back to it).
+    private readonly Dictionary<string, DateTime> browserBypass = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, (long Bytes, long Ticks)> samples = [];
     private readonly Timer timer;
     private readonly string storePath;
@@ -209,6 +227,7 @@ public sealed class DownloadStore
             Kind = req.Kind,
             Headers = headers,
             RequestedSegments = req.Segments ?? 0,
+            SourceBrowser = req.SourceBrowser,
         };
         if (req.Kind == DownloadKind.video && req.Cookies is { Count: > 0 })
             item.CookieFile = WriteCookieFile(req.Cookies, item.Id);
@@ -378,7 +397,7 @@ public sealed class DownloadStore
         StopConfirmation(id);       // "Download" in the list answers the open question as well
         if (item.State is DownloadState.paused or DownloadState.failed or DownloadState.cancelled)
         {
-            Update(id, i => { i.State = DownloadState.queued; i.ErrorMessage = null; });
+            Update(id, i => { i.State = DownloadState.queued; i.ErrorMessage = null; i.LastHttpStatus = null; });
             cookielessVideos.Remove(id);
             formatDecided.Remove(id);
         }
@@ -496,8 +515,10 @@ public sealed class DownloadStore
         {
             item.State = DownloadState.failed;
             item.ErrorMessage = Describe(error);
+            item.LastHttpStatus = (error as HttpStatusError)?.Status;
             item.Speed = 0;
             item.Touch();
+            if (BrowserMightHelp(error)) OfferHandOff(id);
         }
         ScheduleSave();
         PumpQueue();
@@ -523,6 +544,76 @@ public sealed class DownloadStore
         var inner = e;
         while (inner.InnerException != null && inner is HttpRequestException or AggregateException) inner = inner.InnerException;
         return inner.Message;
+    }
+
+    // ---- Handing a download back to the browser ----
+
+    /// Refusals and odd answers from the server: a browser (its own cookies, one connection, the site's own
+    /// flow) may well get the file. Problems on this computer or with the network would stop it as well.
+    internal static bool BrowserMightHelp(Exception e) => e switch
+    {
+        DownloadFailure f => !f.Local,          // includes HttpStatusError
+        HttpRequestException h => h.HttpRequestError is HttpRequestError.SecureConnectionError
+            or HttpRequestError.InvalidResponse or HttpRequestError.ResponseEnded,
+        _ => false,
+    };
+
+    /// Sites the extensions must not capture right now: listed by the bridge's /ping.
+    public List<string> BypassHosts
+    {
+        get
+        {
+            var now = DateTime.UtcNow;
+            foreach (var k in browserBypass.Where(p => p.Value <= now).Select(p => p.Key).ToList()) browserBypass.Remove(k);
+            return [.. browserBypass.Keys.Order(StringComparer.Ordinal)];
+        }
+    }
+
+    /// The site a download belongs to: the page it was started from, else its own host.
+    public static string? SiteOf(DownloadItem item) => Sites.Key(item.Referer) ?? Sites.Key(item.Host);
+
+    private void OfferHandOff(Guid id)
+    {
+        if (!handOffQueue.Contains(id)) handOffQueue.Add(id);
+        if (!handOffAsking) AskNextHandOff();
+    }
+
+    private void AskNextHandOff()
+    {
+        while (handOffQueue.Count > 0)
+        {
+            var id = handOffQueue[0];
+            handOffQueue.RemoveAt(0);
+            if (Find(id) is not { State: DownloadState.failed, Kind: DownloadKind.file } item) continue;
+            handOffAsking = true;
+            var site = SiteOf(item);
+            Ui.AskHandOffAsync(item, site ?? item.Host ?? item.Url).ContinueWith(t => MainThread.Post(() =>
+            {
+                handOffAsking = false;
+                var answer = t.IsCompletedSuccessfully ? t.Result : HandOffAnswer.Close;
+                if (answer.Always && site != null) Settings.SetBrowserOnly(site, true);
+                // The download may have been retried or removed while the question was open.
+                if (Find(id) is { State: DownloadState.failed })
+                {
+                    if (answer.Decision == HandOffDecision.Browser) HandOffToBrowser(id);
+                    else if (answer.Decision == HandOffDecision.Retry) Resume(id);
+                }
+                AskNextHandOff();
+            }));
+            return;
+        }
+    }
+
+    /// Opens the download in the browser it came from (the default browser otherwise) and removes it from the
+    /// list. For a few minutes the extensions let downloads from that site through, so the browser keeps it.
+    public void HandOffToBrowser(Guid id)
+    {
+        if (Find(id) is not { Kind: DownloadKind.file } item) return;
+        var until = DateTime.UtcNow.AddMinutes(3);
+        foreach (var key in new[] { Sites.Key(item.Host), Sites.Key(item.Referer) })
+            if (key != null) browserBypass[key] = until;
+        BrowserIntegration.OpenInBrowser(Sites.HandOffTarget(item.Uri, item.Referer, item.LastHttpStatus), item.SourceBrowser);
+        Remove(id);
     }
 
     // ---- Video (yt-dlp) ----
@@ -910,7 +1001,7 @@ public sealed class DownloadStore
     {
         var item = Find(id);
         if (item == null || item.State is not (DownloadState.paused or DownloadState.failed or DownloadState.cancelled)) return;
-        Update(id, i => { i.State = DownloadState.queued; i.ErrorMessage = null; });
+        Update(id, i => { i.State = DownloadState.queued; i.ErrorMessage = null; i.LastHttpStatus = null; });
         cookielessVideos.Remove(id);
         formatDecided.Remove(id);       // a video without a stored choice is asked about again
         PumpQueue();
@@ -976,6 +1067,8 @@ public sealed class DownloadStore
     public void ResumeAll()
     {
         foreach (var i in Items.Where(i => i.State is DownloadState.paused or DownloadState.failed).ToList()) Resume(i.Id);
+        PumpQueue();    // also starts downloads added while "Start new downloads immediately" is off
+        RaiseChanged();
     }
 
     public void ClearFinished()

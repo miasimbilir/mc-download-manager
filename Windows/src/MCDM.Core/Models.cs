@@ -74,6 +74,9 @@ public sealed class DownloadItem : INotifyPropertyChanged
     /// yt-dlp: the file being written right now (a playlist moves on from one to the next). Kept so that
     /// cancelling after a restart still finds the part files.
     public string? WorkingPath { get; set; }
+    /// The browser whose extension handed this over (chrome, edge, brave, opera, firefox): a download the app
+    /// cannot get is handed back to that browser.
+    public string? SourceBrowser { get; set; }
 
     // Not persisted
     [JsonIgnore] public double Speed { get; set; }
@@ -83,9 +86,12 @@ public sealed class DownloadItem : INotifyPropertyChanged
     [JsonIgnore] public bool AwaitingConfirmation { get; set; }
     /// The server has been asked about the file (or could not be): an unknown size is final, not pending.
     [JsonIgnore] public bool Probed { get; set; }
+    /// HTTP status of the last refusal (403, 410…), if the download failed with one.
+    [JsonIgnore] public int? LastHttpStatus { get; set; }
 
     [JsonIgnore] public Uri Uri => new(Url);
     [JsonIgnore] public string? Host { get { try { return Uri.Host; } catch { return null; } } }
+    [JsonIgnore] public string? Referer => Headers.GetValueOrDefault("Referer");
 
     /// Part file: id based so it stays put when the file name changes after the probe.
     [JsonIgnore] public string PartPath => Path.Combine(Directory, $".dm-{Id}.part");
@@ -134,7 +140,11 @@ public sealed class DownloadItem : INotifyPropertyChanged
     public void Touch() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
 }
 
-public class DownloadFailure(string message) : Exception(message);
+/// `Local`: a disk or file problem on this computer — a browser would not do better.
+public class DownloadFailure(string message, bool local = false) : Exception(message)
+{
+    public bool Local { get; } = local;
+}
 
 public sealed class HttpStatusError(int status) : DownloadFailure(Loc.T("Server returned HTTP {0}", status))
 {

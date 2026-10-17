@@ -35,6 +35,7 @@ app.Settings.MaxConcurrent = 1;     // with two rows already "downloading" nothi
 app.Settings.ShowDetailOnStart = false;
 app.Settings.OnboardingDone = true;
 app.Settings.DownloadDirectory = @"C:\Users\Kullanıcı\Downloads\MC Download Manager";
+app.Settings.BrowserOnlySites = ["drive.google.com", "wetransfer.com"];
 
 DownloadItem Add(string url, DownloadKind kind, Action<DownloadItem> setup)
 {
@@ -47,7 +48,7 @@ DownloadItem Add(string url, DownloadKind kind, Action<DownloadItem> setup)
 const long MB = 1024 * 1024;
 Add("https://example.com/tatil-fotograflari.jpg", DownloadKind.file, i => { i.State = DownloadState.completed; i.TotalBytes = i.ReceivedBytes = 4 * MB; i.CreatedAt = DateTime.UtcNow.AddDays(-3); i.CompletedAt = i.CreatedAt; });
 var queued = Add("https://example.com/muzik-arsivi.zip", DownloadKind.file, i => { i.CreatedAt = DateTime.UtcNow.AddHours(-5); });
-Add("https://download.example.com/setup-x64.exe", DownloadKind.file, i => { i.State = DownloadState.failed; i.ErrorMessage = Loc.T("Server returned HTTP {0}", 403); i.CreatedAt = DateTime.UtcNow.AddHours(-3); });
+var failed = Add("https://download.example.com/setup-x64.exe", DownloadKind.file, i => { i.State = DownloadState.failed; i.ErrorMessage = Loc.T("Server returned HTTP {0}", 403); i.CreatedAt = DateTime.UtcNow.AddHours(-3); });
 var paused = Add("https://static.media.example.com/TV_FOOTAGE_AMG_GLC_53_4MATIC_high_tech_silver_HD_PAL.mp4", DownloadKind.file, i =>
 {
     i.State = DownloadState.paused; i.TotalBytes = 2355 * MB; i.SupportsRanges = true;
@@ -106,6 +107,7 @@ foreach (var theme in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     Shot(new DetailWindow(app, paused), "detail-paused");
     Shot(new DetailWindow(app, queued), "detail-queued");
     Shot(new DetailWindow(app, done), "detail-done");
+    Shot(new DetailWindow(app, failed), "detail-failed");
     Shot(new AddDownloadWindow(app), "add");
     for (int tab = 0; tab < 4; tab++)
     {
@@ -159,6 +161,13 @@ foreach (var theme in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     app.Store.Remove(asked.Id);
     Shot(PromptWindow.Create(Loc.T("This file was already downloaded"), done.FileName + "\n" + done.FinalPath + "\n" + Loc.T("Downloaded: {0}", Fmt.DateTimeShort(done.CompletedAt!.Value)),
         [Loc.T("Open"), Loc.T("Show in Folder"), Loc.T("Download Again"), Loc.T("Cancel")], null, 3), "duplicate");
+    // 2.1: a refused download offered to the browser, an extension that stays outdated.
+    Shot(PromptWindow.Create(Loc.T("Download in the browser instead?"),
+        Loc.T("“{0}” could not be downloaded: {1}\n\nSome sites (for example WeTransfer) only allow their downloads in a browser. MC Download Manager can hand this download back to the browser.", failed.FileName, failed.ErrorMessage ?? ""),
+        [Loc.T("Download in Browser"), Loc.T("Retry Here"), Loc.T("Close")], Loc.T("Always leave downloads from {0} to the browser", "download.example.com"), 2), "handoff");
+    Shot(PromptWindow.Create(Loc.T("The {0} extension is out of date", "Microsoft Edge"),
+        Loc.T("{0} runs extension {1}, this app comes with {2}. The extension folder has been updated; click the reload icon (↻) of MC Download Manager on the extensions page, or restart {3}.", "Microsoft Edge", "1.3.0", "1.4.1", "Microsoft Edge"),
+        [Loc.T("Open Extensions Page"), Loc.T("Later")], null, 1), "outdated");
     Shot(new CountdownWindow(QueueEndAction.Shutdown, 30), "countdown-shutdown");
     Shot(new CountdownWindow(QueueEndAction.Sleep, 30), "countdown-sleep");
     var release = new UpdateInfo("2.1.0", Updater.ReleasesUrl, "https://example.com/Setup.exe", new string('a', 64), 98 * MB,

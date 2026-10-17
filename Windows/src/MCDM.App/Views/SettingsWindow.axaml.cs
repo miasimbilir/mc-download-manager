@@ -96,6 +96,8 @@ public partial class SettingsWindow : Window
             else if (HeightBox.SelectedIndex != index) HeightBox.SelectedIndex = index;
         }
         if (e.PropertyName is nameof(AppSettings.YtdlpPath)) { RefreshVideo(); ToolInstaller.Shared.RefreshVersions(settings.YtdlpPath); }
+        // The extension's "leave this site to the browser" switch and the failed-download question add sites.
+        if (e.PropertyName is nameof(AppSettings.BrowserOnlySites)) RebuildSites();
     }
 
     private void OnServerChanged(object? sender, PropertyChangedEventArgs e) => RefreshBrowsers();
@@ -172,11 +174,35 @@ public partial class SettingsWindow : Window
         PluginPath.Text = BrowserIntegration.PluginsRoot;
         ToolTip.SetTip(PluginPath, BrowserIntegration.PluginsRoot);
         ShowPlugins.Click += (_, _) => Shell.OpenFolder(BrowserIntegration.PluginsRoot);
+        // Set here: the apostrophes do not survive the markup extension's quoting.
+        SiteCaption.Text = Loc.T("Downloads from these sites are not captured; the browser downloads them itself. Add a site from the extension's menu (“Leave this site's downloads to the browser”) or when a download fails.");
+        RebuildSites();
         Port.Text = settings.ServerPort.ToString();
         Port.TextChanged += (_, _) =>
         {
             if (int.TryParse(Port.Text, out var p) && p is >= 1024 and <= 65535) settings.ServerPort = p;
         };
+    }
+
+    private void RebuildSites()
+    {
+        SiteList.Children.Clear();
+        if (settings.BrowserOnlySites.Count == 0)
+        {
+            SiteList.Children.Add(new TextBlock { Text = Loc.T("No sites"), Classes = { "caption" } });
+            return;
+        }
+        foreach (var site in settings.BrowserOnlySites)
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), MinHeight = 28 };
+            row.Children.Add(new TextBlock { Text = site, VerticalAlignment = VerticalAlignment.Center });
+            var remove = new Button { Content = "✕", Padding = new Thickness(8, 2), VerticalAlignment = VerticalAlignment.Center };
+            ToolTip.SetTip(remove, Loc.T("Capture downloads from this site again"));
+            remove.Click += (_, _) => settings.SetBrowserOnly(site, false);
+            Grid.SetColumn(remove, 1);
+            row.Children.Add(remove);
+            SiteList.Children.Add(row);
+        }
     }
 
     private List<BrowserKind> browsers = [];
@@ -219,7 +245,7 @@ public partial class SettingsWindow : Window
             var outdated = connected && app.Server.IsExtensionOutdated(b.Id);
             var prepared = !b.Firefox && BrowserIntegration.FilesPrepared(b);
             row.Text.Text = outdated ? (b.Firefox ? Loc.T("Old version — add it again with the setup wizard") : Loc.T("Old version — click “Reload” on the extensions page"))
-                : connected ? Loc.T("Connected") : prepared ? Loc.T("Files prepared, not loaded yet") : Loc.T("Not installed");
+                : connected ? (app.Server.ExtensionVersion(b.Id) is { Length: > 0 } v ? Loc.T("Connected ({0})", v) : Loc.T("Connected")) : prepared ? Loc.T("Files prepared, not connected") : Loc.T("Not installed");
             row.Icon.Data = Icons.Get(outdated ? "IconWarningFilled" : connected ? "IconCheckmarkCircleFilled" : "IconCircle");
             var brush = new DynamicResourceExtension(outdated ? "WarnBrush" : connected ? "OkBrush" : "SecondaryTextBrush");
             row.Icon[!ForegroundProperty] = brush;

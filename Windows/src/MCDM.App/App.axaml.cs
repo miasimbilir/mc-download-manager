@@ -62,6 +62,7 @@ public partial class App : Application, IStoreUi
             SetupTray();
             Store.Changed += UpdateTray;
             Server.PropertyChanged += (_, _) => UpdateTray();
+            Server.ExtensionOutdated += browser => _ = TellOutdatedExtension(browser);
             Settings.PropertyChanged += (_, _) => UpdateTray();
             Shell.RefreshStartupPath();
             ToolInstaller.CleanUp();
@@ -241,6 +242,44 @@ public partial class App : Application, IStoreUi
             2 => DuplicateDecision.DownloadAgain,
             _ => DuplicateDecision.Cancel,
         };
+    }
+
+    public async Task<HandOffAnswer> AskHandOffAsync(DownloadItem item, string site)
+    {
+        if (Headless) return HandOffAnswer.Close;
+        var (button, always) = await PromptWindow.Ask(null,
+            Loc.T("Download in the browser instead?"),
+            Loc.T("“{0}” could not be downloaded: {1}\n\nSome sites (for example WeTransfer) only allow their downloads in a browser. MC Download Manager can hand this download back to the browser.", item.FileName, item.ErrorMessage ?? ""),
+            [Loc.T("Download in Browser"), Loc.T("Retry Here"), Loc.T("Close")],
+            checkbox: Loc.T("Always leave downloads from {0} to the browser", site), cancelIndex: 2);
+        return new(button switch { 0 => HandOffDecision.Browser, 1 => HandOffDecision.Retry, _ => HandOffDecision.Close }, always);
+    }
+
+    private bool outdatedAsking;
+
+    /// A browser still runs an extension older than the one this app carries: say so once, and offer the fix
+    /// (Chromium: the folder is current, the extension has to be reloaded; Firefox: install the new add-on).
+    private async Task TellOutdatedExtension(string browserId)
+    {
+        if (Headless || outdatedAsking) return;
+        if (BrowserKind.All.FirstOrDefault(k => k.Id == browserId && k.IsInstalled) is not { } kind) return;
+        outdatedAsking = true;
+        try
+        {
+            var old = Server.ExtensionVersion(browserId) is { Length: > 0 } v ? v : Loc.T("an older version");
+            var bundled = BrowserIntegration.BundledVersion ?? AppInfo.Version;
+            if (!kind.Firefox && BrowserIntegration.FilesPrepared(kind) && BrowserIntegration.PreparedVersion(kind) != bundled)
+                await Task.Run(BrowserIntegration.RefreshPreparedFiles);
+            var text = kind.Firefox
+                ? Loc.T("{0} runs extension {1}, this app comes with {2}. Install the new add-on: Firefox asks you to confirm.", kind.Name, old, bundled)
+                : Loc.T("{0} runs extension {1}, this app comes with {2}. The extension folder has been updated; click the reload icon (↻) of MC Download Manager on the extensions page, or restart {3}.", kind.Name, old, bundled, kind.Name);
+            var (button, _) = await PromptWindow.Ask(null, Loc.T("The {0} extension is out of date", kind.Name), text,
+                [kind.Firefox ? Loc.T("Add to Firefox") : Loc.T("Open Extensions Page"), Loc.T("Later")], cancelIndex: 1);
+            if (button != 0) return;
+            if (kind.Firefox) BrowserIntegration.InstallFirefoxAddon(kind); else BrowserIntegration.OpenExtensionsPage(kind);
+        }
+        catch (Exception e) { CrashLog.Write(e); }
+        finally { outdatedAsking = false; }
     }
 
     public async void QueueFinished(QueueEndAction action)

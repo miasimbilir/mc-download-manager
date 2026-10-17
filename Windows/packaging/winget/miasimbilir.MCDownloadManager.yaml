@@ -1,6 +1,6 @@
 # winget manifest (version file). Draft: see README.md in this folder before submitting.
 PackageIdentifier: miasimbilir.MCDownloadManager
-PackageVersion: 2.0.0
+PackageVersion: 2.1.0
 DefaultLocale: en-US
 ManifestType: version
 ManifestVersion: 1.6.0

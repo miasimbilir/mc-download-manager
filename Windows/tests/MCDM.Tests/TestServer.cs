@@ -117,6 +117,17 @@ public sealed class TestServer : IDisposable
             case "/norange":
                 range = null;
                 break;
+            case "/no-range-requests":
+                // Anti download-manager check: any Range request is refused, the plain GET a browser sends is served.
+                if (range != null) { await Head(s, "403 Forbidden", "Content-Length: 0"); return true; }
+                break;
+            case "/no-parallel":
+                // Answers the probe, refuses the parallel segment requests.
+                if (range is not null and not (0, 0)) { await Head(s, "403 Forbidden", "Content-Length: 0"); return true; }
+                break;
+            case "/forbidden":
+                await Head(s, "403 Forbidden", "Content-Length: 0");
+                return true;
             case "/lie":
                 // Advertises ranges on the probe, then ignores them
                 if (range is (0, 0)) break;
@@ -139,7 +150,7 @@ public sealed class TestServer : IDisposable
         try
         {
             var extra = new List<string>();
-            if (route == "/named") extra.Add("Content-Disposition: attachment; filename=\"report 2026.pdf\"");
+            if (route is "/named" or "/no-range-requests") extra.Add("Content-Disposition: attachment; filename=\"report 2026.pdf\"");
             if (route == "/typed") extra.Add("Content-Type: application/pdf");
             else extra.Add("Content-Type: application/octet-stream");
 

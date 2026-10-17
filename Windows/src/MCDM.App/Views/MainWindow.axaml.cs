@@ -311,6 +311,8 @@ public partial class MainWindow : Window
                     app.Clipboard.Ignore(item.Url);
                     try { if (Clipboard is { } c) await c.SetTextAsync(item.Url); } catch { }
                 }));
+                if (item.State == DownloadState.failed && item.Kind == DownloadKind.file)
+                    list.Add(Item(Loc.T("Download in Browser"), () => store.HandOffToBrowser(item.Id)));
                 if (item.State == DownloadState.completed)
                 {
                     list.Add(Item(Loc.T("Open"), () => store.Open(item)));

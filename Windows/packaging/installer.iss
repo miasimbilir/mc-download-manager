@@ -1,6 +1,6 @@
 ﻿; Inno Setup 6 script for the Windows installer (MC-Download-Manager-<version>-Setup.exe).
 ; Built by scripts\build.ps1 when ISCC.exe is available:
-;   ISCC /DAppVersion=2.0.0 "/DStage=<...>\build\MC Download Manager" "/DOut=<...>\build" installer.iss
+;   ISCC /DAppVersion=2.1.0 "/DStage=<...>\build\MC Download Manager" "/DOut=<...>\build" installer.iss
 ; Keep the UTF-8 BOM: the Turkish messages below need it.
 ;
 ; Per-user install (no administrator rights, no UAC prompt) into %LOCALAPPDATA%\Programs\MC Download Manager,

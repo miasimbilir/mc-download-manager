@@ -7,7 +7,8 @@ aynı eklenti; .NET 10 ve [Avalonia](https://avaloniaui.net) ile yeniden yazıld
 portta (`127.0.0.1:48213`) aynı API'yi konuşur. Yani tek eklenti iki uygulamayla da çalışır.
 
 Sürüm numarası 1.3.0'a kadar macOS uygulamasını izledi. **2.0'dan itibaren Windows uygulamasının kendi
-numarası var**: aşağıda "2.0 ile gelenler" başlığındaki özellikler yalnızca Windows'ta. Eklenti ve köprü aynı kaldı.
+numarası var**: aşağıda "2.0 ile gelenler" başlığındaki özellikler yalnızca Windows'ta. Eklenti ve köprü macOS
+uygulamasıyla aynı kalıyor; 2.1, macOS 1.4.1'in eklentisini ve yeniliklerini getirdi.
 
 ## Özellikler
 
@@ -30,6 +31,18 @@ numarası var**: aşağıda "2.0 ile gelenler" başlığındaki özellikler yaln
   `Ctrl+V` her bağlantıyı kabul eder.
 - **Bildirim alanında yaşar** — pencere kapansa da köprü açık kalır; istenirse oturum açılışında başlar.
   Arayüz sistem dilini izler: Türkçe ve İngilizce.
+
+### 2.1 ile gelenler (macOS 1.4.0–1.4.1'den)
+
+- **İndirme yöneticisini reddeden siteler** — sunucu çok parçalı indirmeyi reddederse uygulama hata vermez, tarayıcı
+  gibi tek bağlantıyla devam eder. Yine de olmazsa (ör. WeTransfer'in tek kullanımlık bağlantıları) "Bunun yerine
+  tarayıcıda indirilsin mi?" diye sorar ve indirmeyi geldiği tarayıcıya geri verir. Başarısız indirmelerde
+  "Tarayıcıda İndir" de var.
+- **Siteyi tarayıcıya bırakma** — eklenti menüsündeki "‹site› indirmelerini tarayıcıya bırak" anahtarıyla o sitenin
+  indirmeleri hiç yakalanmaz; liste Ayarlar ▸ Tarayıcı Eklentileri'nde.
+- **Eklenti kendini güncel tutar** — uygulama güncellenince Chrome/Edge/Brave/Opera eklentisi kendini yeni sürümle
+  yeniden yükler (1.4.1 öncesi eklentiler için bir kez "↻" gerekir; uygulama bunu söyler). Firefox eklentisi 1.4.1:
+  yeni indirmeleri artık duraklatmıyor (ChatGPT'nin ZIP dosyaları gibi sürdürülemeyen indirmeler bozulmuyor).
 
 ### 2.0 ile gelenler
 

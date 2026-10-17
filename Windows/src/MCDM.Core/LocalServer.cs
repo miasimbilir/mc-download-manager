@@ -120,7 +120,7 @@ public sealed class LocalServer(int port, Func<HttpRequest, Task<HttpResponse>> 
         {
             head.Append("Access-Control-Allow-Origin: ").Append(origin).Append("\r\n")
                 .Append("Vary: Origin\r\n")
-                .Append("Access-Control-Allow-Headers: Content-Type, X-MCDM-Extension, X-MCDM-Extension-Id\r\n")
+                .Append("Access-Control-Allow-Headers: Content-Type, X-MCDM-Extension, X-MCDM-Extension-Id, X-MCDM-Extension-Version\r\n")
                 .Append("Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n")
                 // Chrome Private/Local Network Access preflights for loopback targets.
                 .Append("Access-Control-Allow-Private-Network: true\r\n")
@@ -147,12 +147,25 @@ public sealed class ServerController : INotifyPropertyChanged
     public bool IsExtensionConnected(string browser, double withinSeconds = 120) =>
         extensionConnections.TryGetValue(browser, out var d) && (DateTime.UtcNow - d).TotalSeconds < withinSeconds;
 
-    /// Browsers whose extension last spoke without the header every extension has sent since 1.3.0
-    /// (X-MCDM-Extension-Id): an older copy is still loaded there. The files on disk may well be current —
-    /// a Chromium browser keeps running the old code until “Reload” is clicked on its extensions page.
+    /// Browsers whose extension runs another version than the one this app carries (since 1.4.1 every
+    /// extension reports its version; older ones send no version header, before 1.3.0 not even their id).
+    /// The files on disk may well be current — a Chromium browser keeps running the old code until the
+    /// extension reloads (1.4.1 and later do that by themselves) or “Reload” is clicked on its extensions page.
     private readonly HashSet<string> outdatedExtensions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> extensionVersions = new(StringComparer.Ordinal);
+    private readonly HashSet<string> outdatedNoticed = new(StringComparer.Ordinal);
 
     public bool IsExtensionOutdated(string browser) => outdatedExtensions.Contains(browser);
+
+    /// Version the browser's extension reported last ("" when it is too old to report one, null when it never spoke).
+    public string? ExtensionVersion(string browser) => extensionVersions.GetValueOrDefault(browser);
+
+    /// A browser keeps running an outdated extension a little while after it first spoke (an extension that
+    /// reloads itself reports the new version within a ping or two): once per browser and launch.
+    public event Action<string>? ExtensionOutdated;
+
+    /// How long an outdated extension gets to reload itself before the user is told.
+    public static TimeSpan OutdatedGrace { get; set; } = TimeSpan.FromSeconds(12);
 
     private LocalServer? server;
     private readonly DownloadStore store;
@@ -224,7 +237,8 @@ public sealed class ServerController : INotifyPropertyChanged
         Running = false;
     }
 
-    private void NoteConnection(HttpRequest req)
+    /// Which browser's extension sent the request (chrome, edge, brave, opera, firefox, other).
+    public static string BrowserName(HttpRequest req)
     {
         var browser = "other";
         if (req.Headers.TryGetValue("origin", out var origin))
@@ -232,7 +246,7 @@ public sealed class ServerController : INotifyPropertyChanged
             if (origin.StartsWith("chrome-extension://", StringComparison.Ordinal)) browser = "chrome";
             else if (origin.StartsWith("moz-extension://", StringComparison.Ordinal)) browser = "firefox";
         }
-        if (req.Headers.TryGetValue("x-mcdm-extension", out var h) && h.ToLowerInvariant() is "chrome" or "brave" or "edge" or "safari" or "firefox")
+        if (req.Headers.TryGetValue("x-mcdm-extension", out var h) && h.ToLowerInvariant() is "chrome" or "brave" or "opera" or "edge" or "safari" or "firefox")
             browser = h.ToLowerInvariant();
         var q = req.Path.IndexOf('?');
         if (q >= 0)
@@ -246,6 +260,12 @@ public sealed class ServerController : INotifyPropertyChanged
         // Opera runs the Chrome extension, which introduces itself as "chrome"; only the User-Agent tells them apart.
         if (browser == "chrome" && req.Headers.TryGetValue("user-agent", out var agent) && agent.Contains(" OPR/", StringComparison.Ordinal))
             browser = "opera";
+        return browser;
+    }
+
+    private void NoteConnection(HttpRequest req, string browser)
+    {
+        req.Headers.TryGetValue("origin", out var origin);
         // A Chromium extension that reaches the bridge may also call the native host that starts the app.
         req.Headers.TryGetValue("x-mcdm-extension-id", out var extensionId);
         if (origin != null && origin.StartsWith("chrome-extension://", StringComparison.Ordinal))
@@ -253,10 +273,28 @@ public sealed class ServerController : INotifyPropertyChanged
         if (NativeHostRegistry.NoteExtensionId(settings, extensionId)) Task.Run(() => NativeHostRegistry.Register(settings));
         var first = !IsExtensionConnected(browser);
         extensionConnections[browser] = DateTime.UtcNow;
-        var outdated = !req.Headers.ContainsKey("x-mcdm-extension-id");
+        var version = req.Headers.GetValueOrDefault("x-mcdm-extension-version") ?? "";
+        var versionChanged = extensionVersions.GetValueOrDefault(browser) != version;
+        extensionVersions[browser] = version;
+        var outdated = IsOutdated(req.Headers.ContainsKey("x-mcdm-extension-id"), version, BrowserIntegration.BundledVersion);
         var changed = outdated ? outdatedExtensions.Add(browser) : outdatedExtensions.Remove(browser);
-        if (first || changed) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        if (first || changed || versionChanged) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        if (outdated && browser != "other" && outdatedNoticed.Add(browser))
+        {
+            Timer? t = null;
+            t = new Timer(_ => MainThread.Post(() =>
+            {
+                t?.Dispose();
+                if (IsExtensionOutdated(browser)) ExtensionOutdated?.Invoke(browser);
+                else outdatedNoticed.Remove(browser);   // it reloaded itself; a later outdated copy is noticed again
+            }), null, OutdatedGrace, Timeout.InfiniteTimeSpan);
+        }
     }
+
+    /// `bundled`: the version this app carries (null when its extension files are missing — then only extensions
+    /// from before 1.3.0, which send no id, count as outdated).
+    internal static bool IsOutdated(bool sentId, string version, string? bundled) =>
+        !sentId || (bundled != null && version != bundled);
 
     /// Only browser extensions may talk to the bridge. Requests without an Origin, with an empty Origin or
     /// with the opaque "null" origin (sandboxed iframes, data: pages) are rejected, so ordinary web pages
@@ -293,7 +331,8 @@ public sealed class ServerController : INotifyPropertyChanged
         if (!ExtensionRequest(req) || !HostAllowed(req.Headers.GetValueOrDefault("host")))
             return HttpResponse.Error(403, "forbidden");
         if (req.Method == "OPTIONS") return HttpResponse.Ok(new JsonObject { ["ok"] = true });
-        NoteConnection(req);
+        var browser = BrowserName(req);
+        NoteConnection(req, browser);
         var q = req.Path.IndexOf('?');
         var path = q >= 0 ? req.Path[..q] : req.Path;
 
@@ -303,6 +342,10 @@ public sealed class ServerController : INotifyPropertyChanged
             {
                 var exts = new JsonArray();
                 foreach (var e in settings.CaptureExtensions) exts.Add(e);
+                var sites = new JsonArray();
+                foreach (var e in settings.BrowserOnlySites) sites.Add(e);
+                var bypass = new JsonArray();
+                foreach (var e in store.BypassHosts) bypass.Add(e);
                 return HttpResponse.Ok(new JsonObject
                 {
                     ["ok"] = true,
@@ -312,6 +355,11 @@ public sealed class ServerController : INotifyPropertyChanged
                     ["ytdlp"] = VideoDownloader.LocateYtDlp(settings.YtdlpPath) != null,
                     ["active"] = store.ActiveCount,
                     ["captureExtensions"] = exts,
+                    // Extensions compare this with their own version and reload themselves (unpacked) when it differs.
+                    ["extensionVersion"] = BrowserIntegration.BundledVersion,
+                    // Downloads from these sites stay in the browser: permanently, or for a few minutes after a hand-off.
+                    ["browserOnlySites"] = sites,
+                    ["bypassHosts"] = bypass,
                 });
             }
 
@@ -351,6 +399,7 @@ public sealed class ServerController : INotifyPropertyChanged
                     CookieHeader = Str(obj, "cookieHeader"),
                     Kind = Str(obj, "kind") == "video" ? DownloadKind.video : DownloadKind.file,
                     Confirm = true,
+                    SourceBrowser = browser == "other" ? null : browser,
                 };
                 if (obj.TryGetProperty("cookies", out var cookies) && cookies.ValueKind == JsonValueKind.Array)
                 {
@@ -372,6 +421,20 @@ public sealed class ServerController : INotifyPropertyChanged
                     r.Segments = Math.Clamp(sn, 1, 16);
                 var item = store.Add(r);
                 return HttpResponse.Ok(new JsonObject { ["ok"] = true, ["id"] = item.Id.ToString().ToUpperInvariant() });
+            }
+
+            case ("POST", "/site"):
+            {
+                JsonElement obj;
+                try { obj = JsonDocument.Parse(req.Body).RootElement; }
+                catch { return HttpResponse.Error(400, "invalid json"); }
+                if (obj.ValueKind != JsonValueKind.Object || Sites.Key(Str(obj, "host")) is not { } host
+                    || !obj.TryGetProperty("browserOnly", out var on) || on.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    return HttpResponse.Error(400, "host and browserOnly required");
+                settings.SetBrowserOnly(host, on.ValueKind == JsonValueKind.True);
+                var list = new JsonArray();
+                foreach (var e in settings.BrowserOnlySites) list.Add(e);
+                return HttpResponse.Ok(new JsonObject { ["ok"] = true, ["browserOnlySites"] = list });
             }
 
             case ("POST", "/action"):

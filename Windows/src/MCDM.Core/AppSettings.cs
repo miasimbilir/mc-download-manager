@@ -29,6 +29,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool denoPromptSuppressed;
     private bool askVideoQuality = true;
     private List<string> chromiumExtensionIds = [];
+    private List<string> browserOnlySites = [];
     private bool askBeforeDownload = true;
     private bool speedLimitEnabled;
     private int speedLimitKb = 1024;
@@ -65,6 +66,11 @@ public sealed class AppSettings : INotifyPropertyChanged
 
     /// Ids of the Chromium extensions that have talked to the bridge; they may call the native host that starts the app.
     public List<string> ChromiumExtensionIds { get => chromiumExtensionIds; set => Set(ref chromiumExtensionIds, value ?? []); }
+
+    /// Sites whose downloads stay in the browser (keys from Sites.Key; subdomains match too).
+    public List<string> BrowserOnlySites { get => browserOnlySites; set => Set(ref browserOnlySites, Sites.With(value, null, false)); }
+
+    public void SetBrowserOnly(string? hostOrUrl, bool on) => BrowserOnlySites = Sites.With(browserOnlySites, hostOrUrl, on);
 
     /// A file handed over by the browser is shown first (name, size, where it goes) and starts when the user says so.
     public bool AskBeforeDownload { get => askBeforeDownload; set => Set(ref askBeforeDownload, value); }

@@ -28,6 +28,9 @@ Kullanım
   sağ tıklayıp aynı adlı satırı seçin. Değeri Ayarlar > Genel'den belirlenir.
 - "Bitince": ana pencerenin altından, son indirme de bitince bilgisayarın uyumasını ya da kapanmasını
   seçebilirsiniz. Öncesinde 30 saniyelik bir geri sayım çıkar; "İptal" ile vazgeçilir.
+- Uygulama bir dosyayı indiremezse (bazı siteler yalnızca tarayıcıya izin verir) "Bunun yerine tarayıcıda
+  indirilsin mi?" diye sorar ve dosyayı tarayıcıya geri verir. Bir sitenin indirmelerini hep tarayıcıya
+  bırakmak için eklenti düğmesindeki "... indirmelerini tarayıcıya bırak" anahtarını açın.
 - Uygulamadan çıkmış olsanız bile tarayıcıda bir indirme başlatınca eklenti uygulamayı kendisi açar.
 - Pencereyi kapatmak uygulamayı kapatmaz; saatin yanındaki bildirim alanında çalışmaya
   devam eder. Çıkmak için oradaki simgeye sağ tıklayıp "Çık" deyin.
@@ -38,7 +41,8 @@ Güncelleme
 Yeni sürüm çıkınca uygulama haber verir (elle: Ayarlar > Genel > "Şimdi Denetle"). Kurucuyla kurulmuş
 kopya "Şimdi Güncelle" ile kendini günceller; zip kopyasında indirme sayfası açılır.
 Güncellemeden sonra Ayarlar > Tarayıcı Eklentileri bir tarayıcı için "Eski sürüm" diyorsa, o tarayıcının
-eklentiler sayfasında MC Download Manager kartındaki "Yeniden yükle" düğmesine basın.
+eklentiler sayfasında MC Download Manager kartındaki "Yeniden yükle" düğmesine basın. 2.1'den sonra bu
+bir kez yeterli: eklenti sonraki güncellemelerde kendini yeniler.
 
 Sorun olursa
 ------------

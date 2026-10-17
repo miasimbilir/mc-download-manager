@@ -391,7 +391,20 @@ public static class BrowserIntegration
 
     /// Version of the extension copy the browser is loading (null when not prepared).
     public static string? PreparedVersion(BrowserKind kind) => ManifestVersion(PluginFolder(kind));
-    public static string? BundledVersion => ManifestVersion(BundledExtensionFolder);
+    /// Read once per folder: the bridge asks for it on every request.
+    public static string? BundledVersion
+    {
+        get
+        {
+            var folder = BundledExtensionFolder;
+            var cached = bundledVersionCache;
+            if (cached is { } c && c.Folder == folder) return c.Version;
+            var v = ManifestVersion(folder);
+            bundledVersionCache = (folder, v);
+            return v;
+        }
+    }
+    private static (string Folder, string? Version)? bundledVersionCache;
 
     private static string? ManifestVersion(string folder)
     {
@@ -445,6 +458,34 @@ public static class BrowserIntegration
         {
             return false;
         }
+    }
+
+    /// Tests see what would have been opened instead of a browser window appearing.
+    internal static Action<Uri, string?>? OpenInBrowserHook;
+
+    /// Opens an http(s) address in the given browser (an id such as "chrome" or "firefox", as the bridge
+    /// names them), or in the default browser when that one is unknown or not installed.
+    public static void OpenInBrowser(Uri url, string? browserId)
+    {
+        if (Links.ParseHttp(url.AbsoluteUri) is not { } safe) return;
+        if (OpenInBrowserHook is { } hook) { hook(safe, browserId); return; }
+        var exe = browserId == null ? null : BrowserKind.All.Where(k => k.Id == browserId).Select(k => k.ExecutablePath).FirstOrDefault(p => p != null);
+        if (exe != null)
+        {
+            try
+            {
+                if (OperatingSystem.IsMacOS()) Process.Start("open", ["-a", exe, safe.AbsoluteUri]);
+                else
+                {
+                    var psi = new ProcessStartInfo(exe) { UseShellExecute = false };
+                    psi.ArgumentList.Add(safe.AbsoluteUri);
+                    Process.Start(psi);
+                }
+                return;
+            }
+            catch { }
+        }
+        Shell.OpenUrl(safe.AbsoluteUri);
     }
 
     /// Opens the browser's extensions page (the same as running `chrome.exe chrome://extensions`).

@@ -150,6 +150,13 @@
           </Border>
           <Border Classes="card">
             <StackPanel>
+              <TextBlock Classes="section" Text="{l:T 'Sites left to the browser'}" />
+              <TextBlock Classes="caption" x:Name="SiteCaption" />
+              <StackPanel x:Name="SiteList" Spacing="2" Margin="0,4,0,0" />
+            </StackPanel>
+          </Border>
+          <Border Classes="card">
+            <StackPanel>
               <TextBlock Classes="section" Text="{l:T 'Local bridge'}" />
               <StackPanel Orientation="Horizontal" Spacing="10">
                 <TextBlock Text="{l:T 'Port'}" VerticalAlignment="Center" />

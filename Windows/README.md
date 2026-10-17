@@ -7,7 +7,8 @@ The Chrome extension in [`../Extension`](../Extension) is used unchanged, and th
 API on the same port (`127.0.0.1:48213`), so one extension works with either app.
 
 Up to 1.3.0 the version number followed the macOS app. **From 2.0 on the Windows app has its own**: what is
-listed under "New in 2.0" below exists on Windows only. The extension and the bridge are unchanged.
+listed under "New in 2.0" below exists on Windows only. The extension and the bridge stay the same as the
+macOS app's; 2.1 brought in the extension and the new features of macOS 1.4.1.
 
 ## What it does
 
@@ -30,6 +31,18 @@ listed under "New in 2.0" below exists on Windows only. The extension and the br
   main window accepts any link.
 - **Lives in the notification area** — the bridge stays up when the window is closed; optional start at
   sign-in. English and Turkish, following the system language.
+
+### New in 2.1 (from macOS 1.4.0–1.4.1)
+
+- **Sites that refuse download managers** — when a server refuses parallel connections the app continues on a
+  single one, the way a browser downloads. If that fails too (WeTransfer's one-time links, for example) it asks
+  "Download in the browser instead?" and hands the download back to the browser it came from. Failed downloads
+  also have "Download in Browser".
+- **Leave a site to the browser** — the extension popup's "Leave downloads on ‹site› to the browser" switch keeps
+  that site's downloads in the browser; the list is in Settings ▸ Browser Extensions.
+- **The extension keeps itself current** — after an app update the Chrome/Edge/Brave/Opera extension reloads
+  itself with the new version (extensions older than 1.4.1 need one click on "↻"; the app says so). Firefox add-on
+  1.4.1: no longer pauses new downloads, so downloads that cannot be resumed (ChatGPT's ZIP files) do not break.
 
 ### New in 2.0
 

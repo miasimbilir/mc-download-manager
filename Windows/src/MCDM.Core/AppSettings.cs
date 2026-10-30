@@ -30,6 +30,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool askVideoQuality = true;
     private List<string> chromiumExtensionIds = [];
     private List<string> browserOnlySites = [];
+    private Dictionary<string, HostLimit> hostLimits = new(StringComparer.Ordinal);
     private bool askBeforeDownload = true;
     private bool speedLimitEnabled;
     private int speedLimitKb = 1024;
@@ -38,6 +39,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private bool checkForUpdates = true;
     private string skippedVersion = "";
     private DateTime lastUpdateCheck;
+    private bool? startWithWindows;
 
     public int SegmentCount { get => segmentCount; set => Set(ref segmentCount, Math.Clamp(value, 1, 16)); }
     public int MaxConcurrent { get => maxConcurrent; set => Set(ref maxConcurrent, Math.Clamp(value, 1, 10)); }
@@ -72,6 +74,58 @@ public sealed class AppSettings : INotifyPropertyChanged
 
     public void SetBrowserOnly(string? hostOrUrl, bool on) => BrowserOnlySites = Sites.With(browserOnlySites, hostOrUrl, on);
 
+    /// Servers that accepted fewer connections than asked for, by site key (Sites.Key): the next download from there starts with that many.
+    public Dictionary<string, HostLimit> HostLimits { get => hostLimits; set => Set(ref hostLimits, value ?? new(StringComparer.Ordinal)); }
+
+    public const int MaxHostLimits = 200;
+    public static readonly TimeSpan HostLimitLifetime = TimeSpan.FromDays(7);
+
+    /// The remembered connection count for this host (or URL), or null when there is none or it has expired.
+    public int? ConnectionLimit(string? hostOrUrl, DateTime nowUtc)
+    {
+        var key = Sites.Key(hostOrUrl);
+        if (key != null && hostLimits.TryGetValue(key, out var limit) && limit != null && limit.Until > nowUtc)
+            return limit.Connections;
+        return null;
+    }
+
+    /// Remembers that this host accepted `connections` (clamped to 1..16) for HostLimitLifetime from nowUtc.
+    /// A lower count already remembered and not yet expired is kept (its Until is extended); a higher one is replaced.
+    /// Expired entries are dropped. When more than MaxHostLimits entries remain, the ones with the earliest Until go.
+    /// An invalid host does nothing. Always assigns a NEW dictionary to HostLimits (Set compares references, so the file is saved).
+    public void RememberConnections(string? hostOrUrl, int connections, DateTime nowUtc)
+    {
+        var key = Sites.Key(hostOrUrl);
+        if (key == null) return;
+
+        var clamped = Math.Clamp(connections, 1, 16);
+        var until = nowUtc + HostLimitLifetime;
+
+        var next = new Dictionary<string, HostLimit>(StringComparer.Ordinal);
+        foreach (var (k, v) in hostLimits)
+        {
+            if (v != null && v.Until > nowUtc && !string.Equals(k, key, StringComparison.Ordinal))
+                next[k] = v;
+        }
+
+        if (hostLimits.TryGetValue(key, out var existing) && existing != null && existing.Until > nowUtc)
+            clamped = Math.Min(existing.Connections, clamped);
+
+        next[key] = new HostLimit(clamped, until);
+
+        if (next.Count > MaxHostLimits)
+        {
+            var toRemove = next.OrderBy(kv => kv.Value.Until)
+                               .Take(next.Count - MaxHostLimits)
+                               .Select(kv => kv.Key)
+                               .ToList();
+            foreach (var k in toRemove)
+                next.Remove(k);
+        }
+
+        HostLimits = next;
+    }
+
     /// A file handed over by the browser is shown first (name, size, where it goes) and starts when the user says so.
     public bool AskBeforeDownload { get => askBeforeDownload; set => Set(ref askBeforeDownload, value); }
 
@@ -82,7 +136,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     /// 0 = no limit.
     [JsonIgnore] public long SpeedLimitBytes => speedLimitEnabled ? speedLimitKb * 1024L : 0;
 
-    /// Subtitles are saved next to a video as .srt files; the quality question remembers the last choice here.
+    /// Subtitles are saved next to a video as .srt files. The quality question can switch them for one video only.
     public bool VideoSubtitles { get => videoSubtitles; set => Set(ref videoSubtitles, value); }
     /// yt-dlp language list ("tr,en").
     public string SubtitleLanguages { get => subtitleLanguages; set => Set(ref subtitleLanguages, CleanLanguages(value)); }
@@ -101,6 +155,9 @@ public sealed class AppSettings : INotifyPropertyChanged
     /// "Skip This Version": this release is not offered again (a later one is).
     public string SkippedVersion { get => skippedVersion; set => Set(ref skippedVersion, value ?? ""); }
     public DateTime LastUpdateCheck { get => lastUpdateCheck; set => Set(ref lastUpdateCheck, value); }
+
+    /// "Start with Windows" as the user last chose it (the Run entry itself is in the registry); null = not known yet.
+    public bool? StartWithWindows { get => startWithWindows; set => Set(ref startWithWindows, value); }
 
     /// All file extensions (lowercase, no dot) the app should capture.
     [JsonIgnore] public List<string> CaptureExtensions => CaptureTypes.Extensions(captureGroupIds, customExtensions);
@@ -205,3 +262,6 @@ public sealed class AppSettings : INotifyPropertyChanged
         return true;
     }
 }
+
+/// How many parallel connections a server accepted, and until when that is trusted.
+public sealed record HostLimit(int Connections, DateTime Until);

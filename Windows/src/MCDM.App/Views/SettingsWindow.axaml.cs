@@ -138,6 +138,7 @@ public partial class SettingsWindow : Window
             try
             {
                 Shell.SetStartup(Startup.IsChecked == true);
+                settings.StartWithWindows = Startup.IsChecked == true;
                 StartupError.IsVisible = false;
             }
             catch (Exception e)

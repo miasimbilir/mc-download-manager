@@ -32,6 +32,22 @@ macOS app's; 2.1 brought in the extension and the new features of macOS 1.4.1.
 - **Lives in the notification area** — the bridge stays up when the window is closed; optional start at
   sign-in. English and Turkish, following the system language.
 
+### New in 2.2
+
+- **Connections stay busy to the end** — a connection that finishes its part takes over half of the largest part
+  still left, so the end of a download no longer waits on one slow part.
+- **"Is it still the same file?" before resuming** — a paused download asks the server whether the file has changed
+  (ETag / Last-Modified, size). If it has, old and new parts are not mixed: the file is downloaded again from the
+  start, and the download window says so.
+- **Remembers a server's limit** — a server that accepts only, say, two connections gets two from the start for a
+  week instead of refusing the rest every time.
+- **The question does not spend the link** — size and name are asked with a HEAD request that fetches no content;
+  sites that refuse split downloads now show the size too, and a refusal (404 and the like) shows in the question.
+- Small fixes: "Start with Windows" survives an uninstall and reinstall; the subtitle switch in the quality question
+  applies to that video only; a video's name shows as it will be saved (`：`) before the download starts; a download
+  handed to the browser closes its window; questions that arrive together fan out from the first one; "Add to
+  Firefox" starts a closed Firefox first; the Firefox add-on is checked against its own version.
+
 ### New in 2.1 (from macOS 1.4.0–1.4.1)
 
 - **Sites that refuse download managers** — when a server refuses parallel connections the app continues on a

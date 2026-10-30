@@ -53,6 +53,8 @@ public interface IStoreUi
 {
     void ShowDetail(Guid id);
     void DetailCompleted(Guid id, bool autoClose);
+    /// The download left the app (handed to the browser): its window goes too.
+    void CloseDetail(Guid id) { }
     void NotifyCompleted(DownloadItem item);
     /// Asks once whether to install deno. Returns (install, don't ask again).
     Task<(bool Install, bool DontAskAgain)> AskInstallDenoAsync();
@@ -312,12 +314,15 @@ public sealed class DownloadStore
         Task.Run(async () =>
         {
             ProbeResult? probe = null;
+            int? refused = null;
             try { probe = await SegmentedDownloader.ProbeOnceAsync(url, headers, cts.Token).ConfigureAwait(false); }
+            catch (HttpStatusError e) { refused = e.Status; }     // shown in the question; the download may still work
             catch { }               // the question works without it; a real problem shows when the download starts
             MainThread.Post(() =>
             {
                 if (!Waiting() || Find(id) is not { } current) return;
                 if (probe != null) ApplyProbe(current, probe);
+                current.ProbeStatus = refused;
                 current.Probed = true;
                 current.Touch();
                 RaiseChanged();
@@ -415,14 +420,19 @@ public sealed class DownloadStore
     {
         var id = item.Id;
         var resumable = item.SupportsRanges && item.TotalBytes > 0 && item.Segments.Count > 0 && File.Exists(item.PartPath);
+        var connections = item.RequestedSegments > 0 ? item.RequestedSegments : Settings.SegmentCount;
+        // A server that accepted fewer connections last time gets that many from the start.
+        if (Settings.ConnectionLimit(item.Url, DateTime.UtcNow) is { } accepted) connections = Math.Min(connections, accepted);
         var dl = new SegmentedDownloader(new SegmentedDownloader.Configuration
         {
             Url = item.Uri,
             Headers = item.Headers,
             PartPath = item.PartPath,
-            SegmentCount = item.RequestedSegments > 0 ? item.RequestedSegments : Settings.SegmentCount,
+            SegmentCount = connections,
             ResumeSegments = resumable ? [.. item.Segments] : [],
             ResumeTotal = resumable ? item.TotalBytes : -1,
+            ResumeETag = resumable ? item.ETag : null,
+            ResumeLastModified = resumable ? item.LastModified : null,
         });
         bool Current() => downloaders.TryGetValue(id, out var d) && ReferenceEquals(d, dl);
         dl.OnProbe = probe => MainThread.Post(() => { if (Current()) HandleProbe(id, probe); });
@@ -436,6 +446,12 @@ public sealed class DownloadStore
                 if (i.State == DownloadState.probing) i.State = DownloadState.downloading;
             });
         });
+        var url = item.Url;
+        dl.OnConnectionLimit = n => MainThread.Post(() => Settings.RememberConnections(url, n, DateTime.UtcNow));
+        dl.OnRestart = () => MainThread.Post(() =>
+        {
+            if (Current()) Update(id, i => i.Note = Loc.T("the file on the server had changed, downloaded again from the start"));
+        });
         dl.OnFinish = error => MainThread.Post(() => { if (Current()) HandleFinish(id, error); });
         downloaders[id] = dl;
         Update(id, i =>
@@ -443,6 +459,7 @@ public sealed class DownloadStore
             i.State = resumable ? DownloadState.downloading : DownloadState.probing;
             i.ErrorMessage = null;
             i.Speed = 0;
+            i.Note = null;
             if (!resumable) { i.ReceivedBytes = 0; i.Segments = []; }
         });
         dl.Start();
@@ -466,6 +483,8 @@ public sealed class DownloadStore
         item.Probed = true;
         item.TotalBytes = p.TotalBytes;
         item.SupportsRanges = p.SupportsRanges;
+        item.ETag = p.ETag;
+        item.LastModified = p.LastModified;
         if (item.NameLocked) return;
         if (!string.IsNullOrEmpty(p.SuggestedFileName))
         {
@@ -614,6 +633,7 @@ public sealed class DownloadStore
         foreach (var key in new[] { Sites.Key(item.Host), Sites.Key(item.Referer) })
             if (key != null) browserBypass[key] = until;
         BrowserIntegration.OpenInBrowser(Sites.HandOffTarget(item.Uri, item.Referer, item.LastHttpStatus), item.SourceBrowser);
+        Ui.CloseDetail(id);
         Remove(id);
     }
 
@@ -807,7 +827,7 @@ public sealed class DownloadStore
                 Update(id, i =>
                 {
                     var title = info.Playlist is { Only: true, Title.Length: > 0 } list ? list.Title : info.Title;
-                    if (title.Length > 0) i.FileName = FileNames.Sanitize(title);
+                    if (title.Length > 0) i.FileName = FileNames.LikeYtDlp(title);
                     i.Stage = Loc.T("Waiting for the quality choice…");
                 });
                 Ui.AskVideoFormatAsync(current, info).ContinueWith(t => MainThread.Post(() =>
@@ -817,7 +837,6 @@ public sealed class DownloadStore
                     if (!mine) return;
                     var answer = t.IsCompletedSuccessfully ? t.Result : VideoFormatAnswer.Default;
                     if (answer == null) { Cancel(id); return; }
-                    if (answer.Subtitles is { } subtitles) Settings.VideoSubtitles = subtitles;     // the next question starts from this
                     Update(id, i =>
                     {
                         i.Playlist = answer.Playlist;

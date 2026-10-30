@@ -32,6 +32,22 @@ uygulamasıyla aynı kalıyor; 2.1, macOS 1.4.1'in eklentisini ve yeniliklerini 
 - **Bildirim alanında yaşar** — pencere kapansa da köprü açık kalır; istenirse oturum açılışında başlar.
   Arayüz sistem dilini izler: Türkçe ve İngilizce.
 
+### 2.2 ile gelenler
+
+- **Bağlantılar sonuna kadar çalışır** — parçasını bitiren bağlantı, en çok işi kalan parçanın yarısını devralır;
+  indirmenin sonunda tek bir yavaş parçayı beklemek gerekmez.
+- **Sürdürmeden önce "dosya aynı mı?"** — yarıda kalan bir indirme sürdürülürken sunucuya dosyanın değişip
+  değişmediği sorulur (ETag / Last-Modified, boyut). Değiştiyse eski ve yeni parçalar karışmaz: dosya baştan iner
+  ve indirme penceresinde bu belirtilir.
+- **Sunucunun sınırını hatırlar** — "en fazla 2 bağlantı" diyen bir sunucu bir hafta boyunca baştan o kadar
+  bağlantıyla indirilir; her seferinde yeniden reddedilmez.
+- **Soru penceresi bağlantıyı harcamaz** — boyut ve ad artık içerik istemeyen bir HEAD isteğiyle sorulur; parçalı
+  indirmeyi reddeden sitelerde de boyut görünür, sunucu dosyayı vermiyorsa (404 gibi) bu pencerede yazar.
+- Küçük düzeltmeler: kaldırıp yeniden kurunca "Windows açılınca başlat" yerinde kalır; kalite sorusundaki altyazı
+  kutusu yalnız o videoya uygulanır; video adı indirme başlamadan da son hâliyle (`：`) görünür; tarayıcıya devredilen
+  indirmenin penceresi kapanır; art arda gelen sorular ilk pencerenin yanından açılır; Firefox kapalıyken "Firefox'a
+  Ekle" önce Firefox'u açar; Firefox eklentisinin güncelliği kendi sürümüne göre denetlenir.
+
 ### 2.1 ile gelenler (macOS 1.4.0–1.4.1'den)
 
 - **İndirme yöneticisini reddeden siteler** — sunucu çok parçalı indirmeyi reddederse uygulama hata vermez, tarayıcı

@@ -98,9 +98,28 @@ public class StoreTests
         await rig.Wait(restored, DownloadState.completed);
         Assert.Equal(server.Data, File.ReadAllBytes(restored.FinalPath!));
         var ranges = server.Requests.Skip(seen).Select(q => q.Headers["Range"]).ToList();
-        Assert.Equal(4, ranges.Count);
+        Assert.True(ranges.Count >= 4);          // the four parts, and maybe splits of them; no new probe
         Assert.DoesNotContain(ranges, r => r.StartsWith("bytes=0-"));
         rig.Dispose();
+    }
+
+    [Fact]
+    public async Task A_server_that_took_fewer_connections_gets_that_many_next_time()
+    {
+        using var server = new TestServer(3 * 1024 * 1024) { MaxConcurrent = 2, ChunkDelayMs = 4 };
+        using var rig = new Rig(s => s.SegmentCount = 8);
+        var first = rig.Add(server.Url("/throttle"));
+        await rig.Wait(first, DownloadState.completed, 60);
+        await Setup.Until(() => rig.On(s => rig.Settings.ConnectionLimit(server.Url("/throttle"), DateTime.UtcNow)) != null, what: "the limit to be remembered");
+        Assert.InRange(rig.Settings.ConnectionLimit("127.0.0.1", DateTime.UtcNow)!.Value, 1, 2);
+        Assert.True(server.Throttled > 0);
+
+        // The next file from there starts with that many: the server has nothing to refuse.
+        var refusedBefore = server.Throttled;
+        var second = rig.Add(server.Url("/throttle"));
+        await rig.Wait(second, DownloadState.completed, 60);
+        Assert.Equal(refusedBefore, server.Throttled);
+        Assert.Equal(server.Data, File.ReadAllBytes(second.FinalPath!));
     }
 
     [Fact]

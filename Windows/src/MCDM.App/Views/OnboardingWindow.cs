@@ -107,7 +107,12 @@ public sealed class OnboardingWindow : Window
         // Reaching the second page shows the checkbox; quitting on the first page leaves startup alone.
         if (step == 1 && Shell.StartupSupported)
         {
-            try { Shell.SetStartup(startup.IsChecked == true); } catch { }
+            try
+            {
+                Shell.SetStartup(startup.IsChecked == true);
+                app.Settings.StartWithWindows = startup.IsChecked == true;
+            }
+            catch { }
         }
         if (openWizard) Avalonia.Threading.Dispatcher.UIThread.Post(app.ShowWizard, Avalonia.Threading.DispatcherPriority.Background);
     }

@@ -40,12 +40,13 @@ public class DownloaderTests
         Assert.Null(r.Error);
         Assert.True(r.Probe!.SupportsRanges);
         Assert.Equal(server.Data.Length, r.Probe.TotalBytes);
-        Assert.Equal(8, r.Segments.Length);
+        Assert.True(r.Segments.Length >= 8);        // the eight parts, and the splits of them free connections took over
         Assert.All(r.Segments, s => Assert.True(s.IsDone));
+        Assert.Equal(server.Data.Length, r.Segments.Sum(s => s.Length));
         Assert.Equal(server.Data.Length, r.Received);
         AssertSame(server.Data, r.Path);
-        // probe + one request per segment
-        Assert.Equal(9, server.Requests.Count(q => q.Headers.ContainsKey("Range")));
+        // probe + one request per part
+        Assert.Equal(1 + r.Segments.Length, server.Requests.Count(q => q.Headers.ContainsKey("Range")));
     }
 
     [Fact]
@@ -184,6 +185,226 @@ public class DownloaderTests
         var later = server.Requests.Skip(before).Select(q => q.Headers["Range"]).ToList();
         Assert.DoesNotContain("bytes=0-0", later);
         Assert.DoesNotContain(later, r => r.StartsWith("bytes=0-"));
+    }
+
+    // ---- Dynamic segmentation, resume validation, connection memory ----
+
+    [Fact]
+    public async Task A_free_connection_takes_over_half_of_the_slowest_part()
+    {
+        // Two parts; the one from the start of the file comes slowly (16 chunks × 80 ms ≈ 1.3 s on its own).
+        using var server = new TestServer(2 * 1024 * 1024) { ChunkDelayMs = 80 };
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var r = await Download(server.Url("/slow-start"), segments: 2);
+        Assert.Null(r.Error);
+        AssertSame(server.Data, r.Path);
+        Assert.True(r.Segments.Length > 2, $"expected splits, got {r.Segments.Length} parts");
+        Assert.Equal(server.Data.Length, r.Segments.Sum(s => s.Length));
+        Assert.Equal(server.Data.Length, r.Received);
+        // The parts tile the file: sorted by start, each begins where the previous one ends.
+        var sorted = r.Segments.OrderBy(s => s.Start).ToList();
+        for (int i = 1; i < sorted.Count; i++) Assert.Equal(sorted[i - 1].End + 1, sorted[i].Start);
+        // A split part was requested from inside the slow first half.
+        Assert.Contains(server.Requests, q => q.Headers.TryGetValue("Range", out var range)
+            && long.Parse(range[6..].Split('-')[0]) is > 0 and < 1024 * 1024);
+        Assert.True(watch.ElapsedMilliseconds < 1200, $"took {watch.ElapsedMilliseconds} ms");
+    }
+
+    [Fact]
+    public async Task One_connection_stays_one_connection()
+    {
+        using var server = new TestServer(1024 * 1024);
+        var r = await Download(server.Url("/file"), segments: 1);
+        Assert.Null(r.Error);
+        AssertSame(server.Data, r.Path);
+        Assert.True(server.Requests.Count <= 2);
+    }
+
+    /// Starts a download, stops it part-way and returns the state a later resume starts from.
+    private static async Task<(string Part, SegmentInfo[] Segments, ProbeResult Probe)> Interrupted(TestServer server, string path)
+    {
+        var part = Path.Combine(Setup.TempDir(), "file.part");
+        long received = 0;
+        SegmentInfo[] segs = [];
+        ProbeResult? probe = null;
+        var dl = new SegmentedDownloader(new SegmentedDownloader.Configuration { Url = new Uri(server.Url(path)), PartPath = part, SegmentCount = 4, MinSegmentSize = 64 * 1024 })
+        {
+            OnProbe = p => probe = p,
+            OnProgress = (r, s) => { received = r; segs = s; },
+        };
+        dl.Start();
+        await Setup.Until(() => Volatile.Read(ref received) > 300_000, what: "some progress");
+        dl.Stop();
+        await Task.Delay(300);
+        return (part, segs, probe!);
+    }
+
+    private static async Task<(Exception? Error, int Restarts)> Resume(TestServer server, string path, string part, SegmentInfo[] segs, ProbeResult probe, long total)
+    {
+        var done = new TaskCompletionSource<Exception?>();
+        var restarts = 0;
+        var dl = new SegmentedDownloader(new SegmentedDownloader.Configuration
+        {
+            Url = new Uri(server.Url(path)), PartPath = part, SegmentCount = 4, MinSegmentSize = 64 * 1024,
+            ResumeSegments = [.. segs], ResumeTotal = total, ResumeETag = probe.ETag, ResumeLastModified = probe.LastModified,
+        })
+        {
+            OnRestart = () => Interlocked.Increment(ref restarts),
+            OnFinish = e => done.TrySetResult(e),
+        };
+        dl.Start();
+        var error = await done.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        return (error, restarts);
+    }
+
+    [Fact]
+    public async Task A_resume_asks_for_the_same_file_and_continues_when_it_is()
+    {
+        using var server = new TestServer(4 * 1024 * 1024) { ChunkDelayMs = 60 };
+        var (part, segs, probe) = await Interrupted(server, "/etag");
+        Assert.Equal("\"v1\"", probe.ETag);
+        Assert.NotNull(probe.LastModified);
+        server.ChunkDelayMs = 0;
+        var before = server.Requests.Count;
+        var (error, restarts) = await Resume(server, "/etag", part, segs, probe, server.Data.Length);
+        Assert.Null(error);
+        Assert.Equal(0, restarts);
+        AssertSame(server.Data, part);
+        var later = server.Requests.Skip(before).ToList();
+        Assert.All(later, q => Assert.Equal("\"v1\"", q.Headers["If-Range"]));
+        Assert.DoesNotContain(later, q => q.Headers["Range"].StartsWith("bytes=0-"));
+    }
+
+    [Fact]
+    public async Task A_resume_starts_over_when_the_file_on_the_server_has_changed()
+    {
+        using var server = new TestServer(4 * 1024 * 1024) { ChunkDelayMs = 60 };
+        var (part, segs, probe) = await Interrupted(server, "/etag");
+        // Same size, other content: only the ETag tells.
+        var replaced = new byte[server.Data.Length];
+        new Random(7).NextBytes(replaced);
+        server.Data = replaced;
+        server.Version = 2;
+        server.ChunkDelayMs = 0;
+        var (error, restarts) = await Resume(server, "/etag", part, segs, probe, replaced.Length);
+        Assert.Null(error);
+        Assert.Equal(1, restarts);
+        AssertSame(replaced, part);
+    }
+
+    [Fact]
+    public async Task A_resume_starts_over_when_the_file_has_another_size()
+    {
+        using var server = new TestServer(4 * 1024 * 1024) { ChunkDelayMs = 60 };
+        var (part, segs, _) = await Interrupted(server, "/slow");
+        var oldLength = server.Data.Length;
+        var replaced = new byte[3 * 1024 * 1024];
+        new Random(9).NextBytes(replaced);
+        server.Data = replaced;
+        server.ChunkDelayMs = 0;
+        // No validators (a server without ETag / Last-Modified): the size in Content-Range still gives it away.
+        var (error, restarts) = await Resume(server, "/slow", part, segs, new ProbeResult(oldLength, true, null, null, null), oldLength);
+        Assert.Null(error);
+        Assert.Equal(1, restarts);
+        AssertSame(replaced, part);
+    }
+
+    [Fact]
+    public async Task Reports_how_many_connections_a_throttling_server_accepted()
+    {
+        using var server = new TestServer(3 * 1024 * 1024) { MaxConcurrent = 2, ChunkDelayMs = 4 };
+        int? accepted = null;
+        var done = new TaskCompletionSource<Exception?>();
+        var dl = new SegmentedDownloader(new SegmentedDownloader.Configuration
+        {
+            Url = new Uri(server.Url("/throttle")), PartPath = Path.Combine(Setup.TempDir(), "file.part"), SegmentCount = 8, MinSegmentSize = 64 * 1024,
+        })
+        {
+            OnConnectionLimit = n => accepted = n,
+            OnFinish = e => done.TrySetResult(e),
+        };
+        dl.Start();
+        Assert.Null(await done.Task.WaitAsync(TimeSpan.FromSeconds(60)));
+        Assert.NotNull(accepted);
+        Assert.InRange(accepted!.Value, 1, 2);
+    }
+
+    [Fact]
+    public async Task Reports_one_connection_for_a_server_that_refuses_parallel_requests()
+    {
+        using var server = new TestServer(900_000);
+        int? accepted = null;
+        var done = new TaskCompletionSource<Exception?>();
+        var dl = new SegmentedDownloader(new SegmentedDownloader.Configuration
+        {
+            Url = new Uri(server.Url("/no-parallel")), PartPath = Path.Combine(Setup.TempDir(), "file.part"), SegmentCount = 4, MinSegmentSize = 64 * 1024,
+        })
+        {
+            OnConnectionLimit = n => accepted = n,
+            OnFinish = e => done.TrySetResult(e),
+        };
+        dl.Start();
+        Assert.Null(await done.Task.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Equal(1, accepted);
+    }
+
+    [Fact]
+    public async Task No_connection_count_is_reported_when_the_server_took_them_all()
+    {
+        using var server = new TestServer(1024 * 1024);
+        int? accepted = null;
+        var done = new TaskCompletionSource<Exception?>();
+        var dl = new SegmentedDownloader(new SegmentedDownloader.Configuration
+        {
+            Url = new Uri(server.Url("/file")), PartPath = Path.Combine(Setup.TempDir(), "file.part"), SegmentCount = 4, MinSegmentSize = 64 * 1024,
+        })
+        {
+            OnConnectionLimit = n => accepted = n,
+            OnFinish = e => done.TrySetResult(e),
+        };
+        dl.Start();
+        Assert.Null(await done.Task.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Null(accepted);
+    }
+
+    // ---- The probe behind the question ----
+
+    [Fact]
+    public async Task The_question_asks_with_HEAD_and_spends_nothing()
+    {
+        using var server = new TestServer(700_000);
+        var p = await SegmentedDownloader.ProbeOnceAsync(new Uri(server.Url("/named")), new(), CancellationToken.None);
+        Assert.Equal(700_000, p.TotalBytes);
+        Assert.True(p.SupportsRanges);
+        Assert.Equal("report 2026.pdf", p.SuggestedFileName);
+        Assert.Equal("HEAD", Assert.Single(server.Requests).Method);
+    }
+
+    [Fact]
+    public async Task The_question_knows_the_size_of_a_file_whose_server_refuses_ranges()
+    {
+        using var server = new TestServer(700_000);
+        var p = await SegmentedDownloader.ProbeOnceAsync(new Uri(server.Url("/no-range-requests")), new(), CancellationToken.None);
+        Assert.Equal(700_000, p.TotalBytes);
+        Assert.False(p.SupportsRanges);
+    }
+
+    [Fact]
+    public async Task The_question_falls_back_to_a_range_probe_when_HEAD_is_refused()
+    {
+        using var server = new TestServer(700_000);
+        var p = await SegmentedDownloader.ProbeOnceAsync(new Uri(server.Url("/head-refused")), new(), CancellationToken.None);
+        Assert.Equal(700_000, p.TotalBytes);
+        Assert.Equal(["HEAD", "GET"], server.Requests.Select(q => q.Method).ToArray());
+        Assert.Equal("bytes=0-0", server.Requests.Last().Headers["Range"]);
+    }
+
+    [Fact]
+    public async Task The_question_hears_a_refusal()
+    {
+        using var server = new TestServer(1000);
+        var e = await Assert.ThrowsAsync<HttpStatusError>(() => SegmentedDownloader.ProbeOnceAsync(new Uri(server.Url("/missing")), new(), CancellationToken.None));
+        Assert.Equal(404, e.Status);
     }
 
     [Theory]

@@ -9,7 +9,9 @@ public class HandOffTests
     private sealed class HandOffUi(HandOffAnswer answer) : IStoreUi
     {
         public readonly List<(Guid Id, string Site)> Asked = [];
+        public readonly List<Guid> Closed = [];
         public void ShowDetail(Guid id) { }
+        public void CloseDetail(Guid id) { lock (Closed) Closed.Add(id); }
         public void DetailCompleted(Guid id, bool autoClose) { }
         public void NotifyCompleted(DownloadItem item) { }
         public Task<(bool Install, bool DontAskAgain)> AskInstallDenoAsync() => Task.FromResult((false, false));
@@ -128,6 +130,7 @@ public class HandOffTests
             var (url, browser) = Assert.Single(opened);
             Assert.Equal(server.Url("/page", host: "localhost"), url.AbsoluteUri);
             Assert.Equal("edge", browser);
+            Assert.Equal([item.Id], ui.Closed);                              // its download window goes with it
             Assert.Equal(["localhost"], rig.Settings.BrowserOnlySites);    // "always" was ticked
             Assert.Equal(["127.0.0.1", "localhost"], rig.On(s => s.BypassHosts));
         }

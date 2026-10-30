@@ -152,15 +152,18 @@ public partial class DetailWindow : Window
             rows.Add(new ConnectionRow(1, Fmt.Size(item.ReceivedBytes), Fmt.Size(0), info));
             return rows;
         }
+        // Finished parts are left out: a free connection splits the largest remaining part, so the list of parts
+        // grows during a download while only a few are still being fetched.
         for (int i = 0; i < item.Segments.Count; i++)
         {
             var s = item.Segments[i];
-            var info = s.IsDone ? Loc.T("Completed")
-                : item.State == DownloadState.downloading ? (s.Received == 0 ? Loc.T("Sending GET…") : Loc.T("Receiving data…"))
+            if (s.IsDone) continue;
+            var info = item.State == DownloadState.downloading ? (s.Received == 0 ? Loc.T("Sending GET…") : Loc.T("Receiving data…"))
                 : item.State == DownloadState.paused ? Loc.T("Paused")
                 : item.State.Label();
-            rows.Add(new ConnectionRow(i + 1, Fmt.Size(s.Received), Fmt.Size(s.Start), info));
+            rows.Add(new ConnectionRow(rows.Count + 1, Fmt.Size(s.Received), Fmt.Size(s.Start), info));
         }
+        if (rows.Count == 0) rows.Add(new ConnectionRow(1, Fmt.Size(item.ReceivedBytes), Fmt.Size(0), Loc.T("Completed")));
         return rows;
     }
 

@@ -12,7 +12,7 @@ namespace MCDM.App.Views;
 /// will be saved, each of which can be changed before the download starts (or put off, or dropped).
 public sealed class DownloadAskWindow : Window
 {
-    private static int open;
+    private static readonly List<DownloadAskWindow> open = [];
 
     private readonly App app = null!;
     private readonly DownloadItem item = null!;
@@ -135,7 +135,10 @@ public sealed class DownloadAskWindow : Window
             filled = item.FileName;
             name.Text = item.FileName;
         }
-        size.Text = item.TotalBytes > 0 ? Fmt.Size(item.TotalBytes) : item.Probed ? Loc.T("Unknown") : Loc.T("Asking the server…");
+        size.Text = item.TotalBytes > 0 ? Fmt.Size(item.TotalBytes)
+            : !item.Probed ? Loc.T("Asking the server…")
+            : item.ProbeStatus is { } status ? Loc.T("Unknown") + " — " + Loc.T("Server returned HTTP {0}", status)
+            : Loc.T("Unknown");
         RefreshFolder();
     }
 
@@ -167,16 +170,16 @@ public sealed class DownloadAskWindow : Window
     {
         var w = new DownloadAskWindow(app, item);
         var closed = new TaskCompletionSource();
-        w.Closed += (_, _) => { open = Math.Max(0, open - 1); closed.TrySetResult(); };
-        // Several files handed over at once: fan the questions out instead of stacking them exactly.
-        if (open > 0)
+        w.Closed += (_, _) => { open.Remove(w); closed.TrySetResult(); };
+        // Several files handed over at once: fan the questions out from the first one (centred on the screen)
+        // instead of stacking them exactly. Positions are in device pixels, the step is not.
+        if (open.FirstOrDefault() is { } first)
         {
             w.WindowStartupLocation = WindowStartupLocation.Manual;
-            var area = (app.MainWindow.Screens.Primary ?? app.MainWindow.Screens.All.FirstOrDefault())?.WorkingArea ?? new PixelRect(0, 0, 1280, 720);
-            var step = 30 * (open % 8);
-            w.Position = new PixelPoint(area.X + area.Width / 2 - 320 + step, area.Y + area.Height / 3 - 120 + step);
+            var step = (int)Math.Round(30 * first.RenderScaling) * (open.Count % 8);
+            w.Position = new PixelPoint(first.Position.X + step, first.Position.Y + step);
         }
-        open++;
+        open.Add(w);
         // The request comes from the browser, so the question has to come to the front on its own.
         w.Topmost = true;
         w.Show();

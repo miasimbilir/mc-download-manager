@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32;
@@ -164,6 +165,20 @@ public static class Shell
     /// The app is portable: if its folder was moved since startup was enabled, point the entry at the new
     /// place. An entry whose program still exists is left alone — a second copy started once (a build
     /// folder found by Windows Search, say) must not take over from the installed one.
+    /// Uninstalling removes the Run entry (it would point at a missing program); installing again does not write it
+    /// back, and the welcome window that asks is not shown a second time. The choice is kept in the settings and the
+    /// entry restored from it. Settings from before this was kept take the registry's word once.
+    public static void RestoreStartup(AppSettings settings)
+    {
+        if (!StartupSupported) return;
+        try
+        {
+            if (settings.StartWithWindows == true && !StartupEnabled) SetStartup(true);
+            else if (settings.StartWithWindows == null && settings.OnboardingDone) settings.StartWithWindows = StartupEnabled;
+        }
+        catch { }
+    }
+
     public static void RefreshStartupPath()
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -445,6 +460,72 @@ public static class BrowserIntegration
         }
     }
 
+    /// Version in the manifest.json inside an .xpi (a zip file); null when the file is missing or unreadable or has no version.
+    internal static string? XpiVersion(string? xpiPath)
+    {
+        if (string.IsNullOrEmpty(xpiPath) || !File.Exists(xpiPath)) return null;
+        try
+        {
+            using var zip = ZipFile.OpenRead(xpiPath);
+            var entry = zip.GetEntry("manifest.json");
+            if (entry == null || !string.Equals(entry.FullName, "manifest.json", StringComparison.Ordinal)) return null;
+            using var stream = entry.Open();
+            using var doc = System.Text.Json.JsonDocument.Parse(stream);
+            if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("version", out var v) &&
+                v.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                return v.GetString();
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// Version of the signed Firefox add-on this app carries (FirefoxAddon); null when there is none.
+    /// Read once per file: cached by path, size and last write time (same volatile-record pattern as bundledVersionCache).
+    public static string? FirefoxBundledVersion
+    {
+        get
+        {
+            var path = FirefoxAddon;
+            if (path == null) return null;
+            try
+            {
+                var info = new FileInfo(path);
+                if (!info.Exists) return null;
+                var size = info.Length;
+                var lastWrite = info.LastWriteTimeUtc;
+                if (firefoxVersionCache is { } c &&
+                    string.Equals(c.Path, path, StringComparison.Ordinal) &&
+                    c.Size == size &&
+                    c.LastWriteUtc == lastWrite)
+                {
+                    return c.Version;
+                }
+                var v = XpiVersion(path);
+                firefoxVersionCache = new(path, size, lastWrite, v);
+                return v;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+    private sealed record XpiVersionCache(string Path, long Size, DateTime LastWriteUtc, string? Version);
+    private static volatile XpiVersionCache? firefoxVersionCache;
+
+    /// The extension version the given browser (a bridge id: "firefox", "chrome", "edge", …) should be running:
+    /// the xpi's for "firefox" (ordinal, case-insensitive), BundledVersion for everything else.
+    public static string? BundledVersionFor(string? browserId) =>
+        string.Equals(browserId, "firefox", StringComparison.OrdinalIgnoreCase)
+            ? FirefoxBundledVersion
+            : BundledVersion;
+
     /// Hands the signed add-on to Firefox, which shows its own “Add MC Download Manager?” prompt and
     /// keeps the add-on installed.
     public static bool InstallFirefoxAddon(BrowserKind kind)
@@ -454,19 +535,47 @@ public static class BrowserIntegration
         if (exe == null || xpi == null) return false;
         try
         {
-            if (OperatingSystem.IsMacOS()) Process.Start("open", ["-a", exe, xpi]);
-            else
+            if (OperatingSystem.IsMacOS()) { Process.Start("open", ["-a", exe, xpi]); return true; }
+            var name = Path.GetFileNameWithoutExtension(exe);
+            if (!HasWindow(name))
             {
-                var psi = new ProcessStartInfo(exe) { UseShellExecute = false };
-                psi.ArgumentList.Add(xpi);
-                Process.Start(psi);
+                // A Firefox that is not running yet may drop the file from its command line while it restores the
+                // last session (only a new tab appeared): start it, then hand the file to the running copy.
+                Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false });
+                Task.Run(async () =>
+                {
+                    for (int i = 0; i < 40 && !HasWindow(name); i++) await Task.Delay(300);
+                    await Task.Delay(1500);
+                    try { StartWith(exe, xpi); } catch { }
+                });
+                return true;
             }
+            StartWith(exe, xpi);
             return true;
         }
         catch
         {
             return false;
         }
+    }
+
+    private static void StartWith(string exe, string argument)
+    {
+        var psi = new ProcessStartInfo(exe) { UseShellExecute = false };
+        psi.ArgumentList.Add(argument);
+        Process.Start(psi);
+    }
+
+    /// A process of that name with a window (a browser that has finished starting).
+    private static bool HasWindow(string processName)
+    {
+        var found = false;
+        foreach (var p in Process.GetProcessesByName(processName))
+        {
+            try { found |= p.MainWindowHandle != IntPtr.Zero; } catch { }
+            p.Dispose();
+        }
+        return found;
     }
 
     /// Tests see what would have been opened instead of a browser window appearing.

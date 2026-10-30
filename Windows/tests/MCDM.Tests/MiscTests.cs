@@ -20,6 +20,12 @@ public class MiscTests
     [InlineData("Dilekçe Örneği (İstanbul).docx", "Dilekçe Örneği (İstanbul).docx")]
     public void Sanitizes_names_for_ntfs(string input, string expected) => Assert.Equal(expected, FileNames.Sanitize(input));
 
+    [Theory]
+    [InlineData("Ders 3: Osmanlı / Selçuklu?", "Ders 3： Osmanlı ⧸ Selçuklu？")]
+    [InlineData("a*b\"c<d>e|f\\g", "a＊b＂c＜d＞e｜f⧹g")]
+    [InlineData("CON", "_CON")]
+    public void Video_titles_get_the_names_yt_dlp_gives_them(string title, string expected) => Assert.Equal(expected, FileNames.LikeYtDlp(title));
+
     [Fact]
     public void Long_names_are_cut_but_keep_their_extension()
     {

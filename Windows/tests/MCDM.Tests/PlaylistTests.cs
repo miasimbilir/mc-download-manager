@@ -182,7 +182,7 @@ public class PlaylistTests
         Assert.False(item.Playlist);
         Assert.Null(item.Note);
         Assert.True(item.Subtitles);
-        Assert.True(settings.VideoSubtitles);           // the next question starts from the last choice
+        Assert.False(settings.VideoSubtitles);          // the answer is for this video; Settings stay as they were
         await MainThread.Run(store.Shutdown);
     }
 

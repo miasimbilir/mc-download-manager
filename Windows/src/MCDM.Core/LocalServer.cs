@@ -280,7 +280,7 @@ public sealed class ServerController : INotifyPropertyChanged
         var version = req.Headers.GetValueOrDefault("x-mcdm-extension-version") ?? "";
         var versionChanged = extensionVersions.GetValueOrDefault(browser) != version;
         extensionVersions[browser] = version;
-        var outdated = IsOutdated(req.Headers.ContainsKey("x-mcdm-extension-id"), version, BrowserIntegration.BundledVersion);
+        var outdated = IsOutdated(req.Headers.ContainsKey("x-mcdm-extension-id"), version, BrowserIntegration.BundledVersionFor(browser));
         var changed = outdated ? outdatedExtensions.Add(browser) : outdatedExtensions.Remove(browser);
         if (first || changed || versionChanged) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
         if (outdated && browser != "other" && !stopped && outdatedNoticed.Add(browser))

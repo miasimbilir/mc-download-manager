@@ -77,6 +77,9 @@ public sealed class DownloadItem : INotifyPropertyChanged
     /// The browser whose extension handed this over (chrome, edge, brave, opera, firefox): a download the app
     /// cannot get is handed back to that browser.
     public string? SourceBrowser { get; set; }
+    /// The server's validators for the file (ProbeResult): a resumed download asks for exactly this file.
+    public string? ETag { get; set; }
+    public string? LastModified { get; set; }
 
     // Not persisted
     [JsonIgnore] public double Speed { get; set; }
@@ -88,6 +91,8 @@ public sealed class DownloadItem : INotifyPropertyChanged
     [JsonIgnore] public bool Probed { get; set; }
     /// HTTP status of the last refusal (403, 410…), if the download failed with one.
     [JsonIgnore] public int? LastHttpStatus { get; set; }
+    /// HTTP status the server answered the question's probe with (404…), shown in the question.
+    [JsonIgnore] public int? ProbeStatus { get; set; }
 
     [JsonIgnore] public Uri Uri => new(Url);
     [JsonIgnore] public string? Host { get { try { return Uri.Host; } catch { return null; } } }
@@ -278,6 +283,22 @@ public static class FileNames
         var stemOnly = n.Split('.')[0];
         if (reserved.Contains(stemOnly)) n = "_" + n;
         return n.Length == 0 ? "download" : n;
+    }
+
+    /// A video title as yt-dlp will name the file: it swaps the characters Windows forbids for look-alike full-width
+    /// ones ("a: b" → "a： b"), so the name shown while waiting is the one the file gets.
+    public static string LikeYtDlp(string title)
+    {
+        var chars = title.ToCharArray();
+        for (int i = 0; i < chars.Length; i++)
+        {
+            chars[i] = chars[i] switch
+            {
+                ':' => '：', '"' => '＂', '<' => '＜', '>' => '＞', '|' => '｜', '?' => '？', '*' => '＊', '/' => '⧸', '\\' => '⧹',
+                var c => c,
+            };
+        }
+        return Sanitize(new string(chars));
     }
 
     /// A file or a folder (a finished playlist is a folder).

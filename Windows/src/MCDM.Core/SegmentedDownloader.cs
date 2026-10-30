@@ -7,7 +7,9 @@ using Microsoft.Win32.SafeHandles;
 
 namespace MCDM;
 
-public sealed record ProbeResult(long TotalBytes, bool SupportsRanges, string? SuggestedFileName, string? ContentType, Uri? FinalUrl);
+/// `ETag` / `LastModified`: the server's validators for the file, kept so a later resume can ask for the same file.
+public sealed record ProbeResult(long TotalBytes, bool SupportsRanges, string? SuggestedFileName, string? ContentType, Uri? FinalUrl,
+    string? ETag = null, string? LastModified = null);
 
 /// Downloads one file with N parallel HTTP Range requests into a single part file.
 /// Shared state (segment progress, the retry queue) is guarded by `gate`; file writes are positional.
@@ -22,6 +24,9 @@ public sealed class SegmentedDownloader
         public long MinSegmentSize { get; init; } = 512 * 1024;
         public List<SegmentInfo> ResumeSegments { get; init; } = [];
         public long ResumeTotal { get; init; } = -1;
+        /// Validators from the run the parts on disk came from (ProbeResult.ETag / LastModified).
+        public string? ResumeETag { get; init; }
+        public string? ResumeLastModified { get; init; }
     }
 
     /// All three are raised on thread-pool threads.
@@ -29,6 +34,10 @@ public sealed class SegmentedDownloader
     public Action<long, SegmentInfo[]>? OnProgress;
     /// null = success. Not raised after Stop().
     public Action<Exception?>? OnFinish;
+    /// The server accepted fewer parallel connections than asked for (1: no parallel requests at all). Raised once, at the end.
+    public Action<int>? OnConnectionLimit;
+    /// The file on the server is not the one the parts on disk came from: the download starts over.
+    public Action? OnRestart;
 
     public static TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(30);
     internal static double BackoffScale { get; set; } = 1;      // tests shorten the waits
@@ -46,6 +55,13 @@ public sealed class SegmentedDownloader
     private long singleReceived;
     private volatile bool stopped;
     private long lastReport;
+    private string? etag;               // validators of the file being fetched
+    private string? lastModified;
+    private long expectedTotal = -1;
+    private bool resuming;              // the parts on disk come from an earlier run
+    private int? acceptedConnections;
+    private int restarts;
+    private const int MaxRestarts = 2;
 
     public SegmentedDownloader(Configuration configuration)
     {
@@ -89,37 +105,16 @@ public sealed class SegmentedDownloader
             if (canResume)
             {
                 segments = [.. config.ResumeSegments];
+                etag = config.ResumeETag;
+                lastModified = config.ResumeLastModified;
+                expectedTotal = config.ResumeTotal;
+                resuming = true;
                 OpenFile(create: false, preallocate: null);
                 await RunMultiAsync(ct).ConfigureAwait(false);
             }
             else
             {
-                ProbeResult? probe = null;
-                try { probe = await ProbeAsync(ct).ConfigureAwait(false); }
-                // Some servers (signed / one-shot links, anti download-manager checks) refuse a Range request
-                // but serve the plain GET a browser would send: try that once before giving up.
-                catch (HttpStatusError e) when (!IsThrottle(e.Status)) { }
-                if (probe == null)
-                {
-                    await RunSingleAsync(ct, reportProbe: true).ConfigureAwait(false);
-                }
-                else
-                {
-                    OnProbe?.Invoke(probe);
-                    var count = probe.SupportsRanges
-                        ? (int)Math.Max(1, Math.Min(config.SegmentCount, probe.TotalBytes / config.MinSegmentSize))
-                        : 1;
-                    if (probe.SupportsRanges && count > 1)
-                    {
-                        segments = MakeSegments(probe.TotalBytes, count);
-                        OpenFile(create: true, preallocate: probe.TotalBytes);
-                        await RunMultiAsync(ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await RunSingleAsync(ct).ConfigureAwait(false);
-                    }
-                }
+                await RunFreshAsync(ct).ConfigureAwait(false);
             }
         }
         catch (Exception e)
@@ -134,7 +129,41 @@ public sealed class SegmentedDownloader
 
         var (received, snapshot) = Snapshot();
         OnProgress?.Invoke(received, snapshot);
+        if (acceptedConnections is { } accepted) OnConnectionLimit?.Invoke(accepted);
         if (!stopped) OnFinish?.Invoke(error);
+    }
+
+    /// Probe, then as many connections as the file and the server allow.
+    private async Task RunFreshAsync(CancellationToken ct)
+    {
+        resuming = false;
+        ProbeResult? probe = null;
+        try { probe = await ProbeAsync(ct).ConfigureAwait(false); }
+        // Some servers (signed / one-shot links, anti download-manager checks) refuse a Range request
+        // but serve the plain GET a browser would send: try that once before giving up.
+        catch (HttpStatusError e) when (!IsThrottle(e.Status)) { }
+        if (probe == null)
+        {
+            await RunSingleAsync(ct, reportProbe: true).ConfigureAwait(false);
+            return;
+        }
+        OnProbe?.Invoke(probe);
+        etag = probe.ETag;
+        lastModified = probe.LastModified;
+        expectedTotal = probe.TotalBytes;
+        var count = probe.SupportsRanges
+            ? (int)Math.Max(1, Math.Min(config.SegmentCount, probe.TotalBytes / config.MinSegmentSize))
+            : 1;
+        if (probe.SupportsRanges && count > 1)
+        {
+            segments = MakeSegments(probe.TotalBytes, count);
+            OpenFile(create: true, preallocate: probe.TotalBytes);
+            await RunMultiAsync(ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await RunSingleAsync(ct).ConfigureAwait(false);
+        }
     }
 
     // ---- Helpers ----
@@ -167,9 +196,9 @@ public sealed class SegmentedDownloader
         && string.Equals(url.Scheme, config.Url.Scheme, StringComparison.OrdinalIgnoreCase)
         && url.Port == config.Url.Port;
 
-    private HttpRequestMessage MakeRequest(Uri url, string? range)
+    private HttpRequestMessage MakeRequest(Uri url, string? range, string? ifRange, HttpMethod method)
     {
-        var r = new HttpRequestMessage(HttpMethod.Get, url);
+        var r = new HttpRequestMessage(method, url);
         var allowCredentials = SameOrigin(url);
         foreach (var (k, v) in config.Headers)
         {
@@ -180,11 +209,13 @@ public sealed class SegmentedDownloader
         r.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
         r.Headers.TryAddWithoutValidation("Cache-Control", "no-cache");
         if (range != null) r.Headers.TryAddWithoutValidation("Range", range);
+        if (range != null && ifRange != null) r.Headers.TryAddWithoutValidation("If-Range", ifRange);
         return r;
     }
 
-    /// Sends a GET and follows redirects. Returns as soon as the response headers are in.
-    private async Task<(HttpResponseMessage, Uri)> SendAsync(string? range, CancellationToken ct)
+    /// Sends a GET (or HEAD) and follows redirects. Returns as soon as the response headers are in.
+    /// `ifRange`: the Range is honoured only while the file is still this one; otherwise the server sends all of it (200).
+    private async Task<(HttpResponseMessage, Uri)> SendAsync(string? range, CancellationToken ct, string? ifRange = null, bool head = false)
     {
         var url = requestUrl;
         for (int hop = 0; hop <= MaxRedirects; hop++)
@@ -194,7 +225,7 @@ public sealed class SegmentedDownloader
             HttpResponseMessage resp;
             try
             {
-                resp = await http.SendAsync(MakeRequest(url, range), HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                resp = await http.SendAsync(MakeRequest(url, range, ifRange, head ? HttpMethod.Head : HttpMethod.Get), HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -222,13 +253,36 @@ public sealed class SegmentedDownloader
         return null;
     }
 
-    /// One request for the headers alone: size, the server's name for the file, whether ranges work.
-    /// Used to show these before a download is confirmed; nothing is written anywhere.
+    /// Size, the server's name for the file, whether ranges work: shown before a download is confirmed; nothing is
+    /// written anywhere. HEAD first, which fetches no content (a link that may be downloaded only once stays
+    /// unspent); the Range probe only when HEAD gives no size. A refusal throws the probe's HttpStatusError.
     public static async Task<ProbeResult> ProbeOnceAsync(Uri url, Dictionary<string, string> headers, CancellationToken ct)
     {
         var dl = new SegmentedDownloader(new Configuration { Url = url, Headers = headers, PartPath = "" });
-        try { return await dl.ProbeAsync(ct).ConfigureAwait(false); }
+        try
+        {
+            try
+            {
+                if (await dl.HeadAsync(ct).ConfigureAwait(false) is { TotalBytes: > 0 } head) return head;
+            }
+            catch (Exception) when (!ct.IsCancellationRequested) { }     // HEAD is often refused (signed GET links)
+            return await dl.ProbeAsync(ct).ConfigureAwait(false);
+        }
         finally { dl.http.Dispose(); }
+    }
+
+    private async Task<ProbeResult> HeadAsync(CancellationToken ct)
+    {
+        var (resp, finalUrl) = await SendAsync(null, ct, head: true).ConfigureAwait(false);
+        using (resp)
+        {
+            var status = (int)resp.StatusCode;
+            if (status is < 200 or > 299) throw new HttpStatusError(status);
+            var total = resp.Content.Headers.ContentLength is > 0 and var n ? n : -1;
+            var accept = Header(resp, "Accept-Ranges")?.ToLowerInvariant() ?? "";
+            return new ProbeResult(total, total > 0 && accept.Contains("bytes"), FileNameFromContentDisposition(Header(resp, "Content-Disposition")),
+                Header(resp, "Content-Type")?.Split(';')[0].Trim(), finalUrl, Header(resp, "ETag"), Header(resp, "Last-Modified"));
+        }
     }
 
     private async Task<ProbeResult> ProbeAsync(CancellationToken ct)
@@ -258,7 +312,7 @@ public sealed class SegmentedDownloader
 
             var name = FileNameFromContentDisposition(Header(resp, "Content-Disposition"));
             var ctype = Header(resp, "Content-Type")?.Split(';')[0].Trim();
-            return new ProbeResult(total, ranges, name, ctype, finalUrl);
+            return new ProbeResult(total, ranges, name, ctype, finalUrl, Header(resp, "ETag"), Header(resp, "Last-Modified"));
         }
     }
 
@@ -383,20 +437,34 @@ public sealed class SegmentedDownloader
 
     // ---- Multi-connection mode ----
 
+    /// The validator a resumed request carries in If-Range: a strong ETag, else Last-Modified. Only for parts from an
+    /// earlier run; within one run the size check below is enough, and some load-balanced servers give every node its
+    /// own ETag.
+    private string? IfRangeValue() =>
+        !resuming ? null
+        : etag is { Length: > 0 } e && !e.StartsWith("W/", StringComparison.Ordinal) ? e
+        : lastModified is { Length: > 0 } m ? m : null;
+
+    /// A part answer whose total size differs from the file's: the server now has another file.
+    private bool SizeChanged(HttpResponseMessage resp) =>
+        expectedTotal > 0 && Header(resp, "Content-Range") is { } range && range.LastIndexOf('/') is var slash and >= 0
+        && long.TryParse(range[(slash + 1)..].Trim(), out var total) && total != expectedTotal;
+
     private async Task RunMultiAsync(CancellationToken stop)
     {
         using var multi = CancellationTokenSource.CreateLinkedTokenSource(stop);
         var ct = multi.Token;
         var pending = new LinkedList<int>();        // segment indexes waiting to be started
         for (int i = 0; i < segments.Length; i++) if (!segments[i].IsDone) pending.AddLast(i);
-        var retries = new int[segments.Length];
+        var running = new HashSet<int>();
+        var retries = new List<int>(new int[segments.Length]);
         var limit = Math.Max(1, config.SegmentCount);
         var activeLimit = limit;                    // open-connection cap; drops on 429/503
         var active = 0;
         var throttledUntil = DateTime.MinValue;
         Exception? fatal = null;
         var fallback = false;
-        var resuming = config.ResumeSegments.Count > 0;
+        var changed = false;
         var wake = new SemaphoreSlim(0);
         var tasks = new List<Task>();
 
@@ -405,6 +473,8 @@ public sealed class SegmentedDownloader
         // Server-side limiting (429/503): lower the connection count and put the segment back in front.
         void Throttle(int i, int status)
         {
+            // 429 and 503 are how file servers say "too many connections": the others that are open are what it accepts.
+            if (status is 429 or 503) acceptedConnections = Math.Min(acceptedConnections ?? int.MaxValue, Math.Max(1, active - 1));
             activeLimit = Math.Max(1, Math.Min(activeLimit, active - 1) - 1);
             var attempt = ++retries[i];
             if (attempt > MaxAttempts) { Fatal(new HttpStatusError(status)); return; }
@@ -425,22 +495,57 @@ public sealed class SegmentedDownloader
             if (!pending.Contains(i)) pending.AddLast(i);
         }
 
+        // Dynamic segmentation: a free connection takes over the second half of the largest part still being
+        // fetched, so every connection stays busy to the end instead of one slow part holding up the file.
+        // The connection that had it stops at the new end (CopyAsync asks how much is still wanted before every read).
+        int? Split()
+        {
+            var best = -1;
+            long bestLeft = 0;
+            foreach (var j in running)
+            {
+                var left = segments[j].Length - segments[j].Received;
+                if (left > bestLeft) { best = j; bestLeft = left; }
+            }
+            if (best < 0 || bestLeft < 2 * Math.Max(1, config.MinSegmentSize)) return null;
+            var old = segments[best];
+            var mid = old.Start + old.Received + bestLeft / 2;
+            segments[best].End = mid - 1;
+            segments = [.. segments, new SegmentInfo(mid, old.End)];
+            retries.Add(0);
+            return segments.Length - 1;
+        }
+
+        void Launch(int index)
+        {
+            active++;
+            running.Add(index);
+            tasks.Add(Task.Run(() => Segment(index)));
+        }
+
         async Task Segment(int i)
         {
             try
             {
                 string range;
                 lock (gate) range = $"bytes={segments[i].Start + segments[i].Received}-{segments[i].End}";
-                var (resp, _) = await SendAsync(range, ct).ConfigureAwait(false);
+                var validator = IfRangeValue();
+                var (resp, _) = await SendAsync(range, ct, validator).ConfigureAwait(false);
                 using (resp)
                 {
                     var status = (int)resp.StatusCode;
-                    if (status == 206)
+                    if (status == 206 && SizeChanged(resp))
+                    {
+                        lock (gate) { changed = true; multi.Cancel(); }
+                    }
+                    else if (status == 206)
                     {
                         lock (gate) retries[i] = 0;
                         await CopyAsync(resp,
                             () => { lock (gate) return (segments[i].Start + segments[i].Received, segments[i].Length - segments[i].Received); },
-                            n => { lock (gate) segments[i].Received += n; },
+                            // A read already under way when the part was split may run past its new end: those bytes
+                            // are the same file, written where they belong, and are not counted twice.
+                            n => { lock (gate) segments[i].Received = Math.Min(segments[i].Length, segments[i].Received + n); },
                             ct).ConfigureAwait(false);
                         lock (gate)
                         {
@@ -450,8 +555,14 @@ public sealed class SegmentedDownloader
                     }
                     else if (status == 200)
                     {
-                        // The server ignored Range: start over as a single stream.
-                        lock (gate) { fallback = true; multi.Cancel(); }
+                        lock (gate)
+                        {
+                            // With If-Range a whole-file answer means the file is no longer the one the parts on disk
+                            // came from. Without it the server ignored Range: start over as a single stream.
+                            if (validator != null) changed = true;
+                            else fallback = true;
+                            multi.Cancel();
+                        }
                     }
                     else if (IsThrottle(status))
                     {
@@ -466,7 +577,7 @@ public sealed class SegmentedDownloader
                             // resuming) starting over could throw it away for a login page: stop with the status instead,
                             // so the download can be resumed later with fresh cookies.
                             if (resuming || segments.Any(s => s.Received > 0)) Fatal(new HttpStatusError(status));
-                            else { fallback = true; multi.Cancel(); }
+                            else { fallback = true; acceptedConnections = 1; multi.Cancel(); }
                         }
                     }
                 }
@@ -482,7 +593,7 @@ public sealed class SegmentedDownloader
             }
             finally
             {
-                lock (gate) active--;
+                lock (gate) { active--; running.Remove(i); }
                 wake.Release();
             }
         }
@@ -492,18 +603,16 @@ public sealed class SegmentedDownloader
             var wait = Timeout.InfiniteTimeSpan;
             lock (gate)
             {
-                if (fatal != null || fallback || ct.IsCancellationRequested) break;
+                if (fatal != null || fallback || changed || ct.IsCancellationRequested) break;
                 var now = DateTime.UtcNow;
                 if (now >= throttledUntil)
                 {
                     while (active < activeLimit && pending.First is { } node)
                     {
                         pending.RemoveFirst();
-                        var index = node.Value;
-                        if (segments[index].IsDone) continue;
-                        active++;
-                        tasks.Add(Task.Run(() => Segment(index)));
+                        if (!segments[node.Value].IsDone) Launch(node.Value);
                     }
+                    while (active < activeLimit && pending.Count == 0 && Split() is { } part) Launch(part);
                 }
                 else
                 {
@@ -518,6 +627,15 @@ public sealed class SegmentedDownloader
         try { await Task.WhenAll(tasks).ConfigureAwait(false); } catch { }
         stop.ThrowIfCancellationRequested();
         if (fatal != null) throw fatal;
+        if (changed)
+        {
+            if (++restarts > MaxRestarts) throw new DownloadFailure(Loc.T("The file on the server keeps changing"));
+            CloseFile();
+            lock (gate) segments = [];
+            OnRestart?.Invoke();
+            await RunFreshAsync(stop).ConfigureAwait(false);
+            return;
+        }
         if (fallback)
         {
             // The part file and the segment state stay as they are until the single stream is actually served.

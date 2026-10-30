@@ -65,6 +65,7 @@ public partial class App : Application, IStoreUi
             Server.ExtensionOutdated += browser => _ = TellOutdatedExtension(browser);
             Settings.PropertyChanged += (_, _) => UpdateTray();
             Shell.RefreshStartupPath();
+            Shell.RestoreStartup(Settings);
             ToolInstaller.CleanUp();
             Updater.CleanUp();
             // Lets the browser extensions start the app when a download arrives while it is closed.
@@ -270,7 +271,8 @@ public partial class App : Application, IStoreUi
         try
         {
             var old = Server.ExtensionVersion(browserId) is { Length: > 0 } v ? v : Loc.T("an older version");
-            var bundled = BrowserIntegration.BundledVersion ?? AppInfo.Version;
+            // Firefox runs the signed add-on, whose version may lag behind the Chromium extension's.
+            var bundled = BrowserIntegration.BundledVersionFor(browserId) ?? AppInfo.Version;
             if (!kind.Firefox && BrowserIntegration.FilesPrepared(kind) && BrowserIntegration.PreparedVersion(kind) != bundled)
                 await Task.Run(BrowserIntegration.RefreshPreparedFiles);
             var text = kind.Firefox

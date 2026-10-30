@@ -52,8 +52,8 @@ public class AskTests
         await Setup.Until(() => item.Probed, what: "the probe");
         Assert.Equal(700_000, item.TotalBytes);
         Assert.Equal("report 2026.pdf", item.FileName);
-        // …with a single one-byte request; nothing is downloaded and nothing starts behind the question.
-        Assert.Equal("bytes=0-0", Assert.Single(server.Requests).Headers["Range"]);
+        // …with a single HEAD request (a one-shot link stays unspent); nothing starts behind the question.
+        Assert.Equal("HEAD", Assert.Single(server.Requests).Method);
         rig.On(s => s.PumpQueue());
         await Task.Delay(200);
         Assert.Equal(DownloadState.queued, item.State);
@@ -68,6 +68,18 @@ public class AskTests
         Assert.Equal(Path.Combine(elsewhere, "benim adım.pdf"), item.FinalPath);     // no category folder, not the server's name
         Assert.Equal(server.Data, File.ReadAllBytes(item.FinalPath!));
         Assert.True(rig.Settings.AskBeforeDownload);
+    }
+
+    [Fact]
+    public async Task The_question_shows_that_the_server_refused_the_file()
+    {
+        using var server = new TestServer(1000);
+        var ui = new Asker { Download = _ => new TaskCompletionSource<DownloadAnswer>().Task };
+        using var rig = Rig(ui);
+        var item = FromBrowser(rig, server.Url("/missing"));
+        await Setup.Until(() => item.Probed, what: "the probe");
+        Assert.Equal(404, item.ProbeStatus);
+        Assert.Equal(-1, item.TotalBytes);
     }
 
     [Fact]

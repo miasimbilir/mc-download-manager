@@ -11,9 +11,11 @@ public sealed class TestServer : IDisposable
     private readonly TcpListener listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource cts = new();
     public int Port { get; }
-    public byte[] Data { get; }
+    /// Replaceable: /etag serves whatever is here, under an ETag that changes with it.
+    public byte[] Data { get; set; }
+    public int Version = 1;
 
-    public ConcurrentQueue<(string Path, Dictionary<string, string> Headers)> Requests { get; } = new();
+    public ConcurrentQueue<(string Path, Dictionary<string, string> Headers, string Method)> Requests { get; } = new();
     public int MaxConcurrent;           // /throttle: answer 429 above this many open transfers
     public int DropFirst;               // /flaky: cut this many range responses short
     public int ChunkDelayMs;            // /slow: pause between chunks
@@ -54,6 +56,7 @@ public sealed class TestServer : IDisposable
                     var head = await ReadHead(stream);
                     if (head == null) return;
                     var lines = head.Split("\r\n");
+                    var method = lines[0].Split(' ')[0];
                     var path = lines[0].Split(' ')[1];
                     var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var l in lines.Skip(1))
@@ -61,8 +64,8 @@ public sealed class TestServer : IDisposable
                         var i = l.IndexOf(':');
                         if (i > 0) headers[l[..i].Trim()] = l[(i + 1)..].Trim();
                     }
-                    Requests.Enqueue((path, headers));
-                    if (!await Respond(stream, path, headers)) return;
+                    Requests.Enqueue((path, headers, method));
+                    if (!await Respond(stream, path, headers, method == "HEAD")) return;
                 }
             }
             catch { }
@@ -96,11 +99,13 @@ public sealed class TestServer : IDisposable
     }
 
     /// Returns false when the connection must be closed.
-    private async Task<bool> Respond(NetworkStream s, string path, Dictionary<string, string> headers)
+    private async Task<bool> Respond(NetworkStream s, string path, Dictionary<string, string> headers, bool head)
     {
         var route = path.Split('?')[0];
-        var total = Data.LongLength;
+        var data = Data;
+        var total = data.LongLength;
         var range = Range(headers, total);
+        var etag = $"\"v{Version}\"";
 
         switch (route)
         {
@@ -133,6 +138,14 @@ public sealed class TestServer : IDisposable
             case "/forbidden":
                 await Head(s, "403 Forbidden", "Content-Length: 0");
                 return true;
+            case "/head-refused":
+                // Signed links are often signed for GET only.
+                if (head) { await Head(s, "403 Forbidden", "Content-Length: 0"); return true; }
+                break;
+            case "/etag":
+                // If-Range: the range only while the file is still the one named.
+                if (headers.TryGetValue("If-Range", out var ifRange) && ifRange != etag) range = null;
+                break;
             case "/lie":
                 // Advertises ranges on the probe, then ignores them
                 if (range is (0, 0)) break;
@@ -156,6 +169,7 @@ public sealed class TestServer : IDisposable
         {
             var extra = new List<string>();
             if (route is "/named" or "/no-range-requests") extra.Add("Content-Disposition: attachment; filename=\"report 2026.pdf\"");
+            if (route == "/etag") { extra.Add($"ETag: {etag}"); extra.Add("Last-Modified: Thu, 29 Oct 2026 10:00:00 GMT"); }
             if (route == "/typed") extra.Add("Content-Type: application/pdf");
             else extra.Add("Content-Type: application/octet-stream");
 
@@ -167,8 +181,9 @@ public sealed class TestServer : IDisposable
             }
             else
             {
-                await Head(s, "200 OK", [$"Content-Length: {total}", .. extra]);
+                await Head(s, "200 OK", [$"Content-Length: {total}", .. head && route is not ("/norange" or "/no-range-requests") ? (string[])["Accept-Ranges: bytes"] : [], .. extra]);
             }
+            if (head) return true;
 
             var length = end - start + 1;
             var cut = route == "/flaky" && length > 1 && Interlocked.Decrement(ref DropFirst) >= 0 ? length / 2 : -1;
@@ -177,9 +192,9 @@ public sealed class TestServer : IDisposable
             {
                 if (cut >= 0 && sent >= cut) return false;       // drop the connection mid-body
                 var n = (int)Math.Min(chunk, length - sent);
-                await s.WriteAsync(Data.AsMemory((int)(start + sent), n));
+                await s.WriteAsync(data.AsMemory((int)(start + sent), n));
                 sent += n;
-                if (ChunkDelayMs > 0 && (route == "/slow" || route == "/throttle")) await Task.Delay(ChunkDelayMs);
+                if (ChunkDelayMs > 0 && (route is "/slow" or "/throttle" or "/etag" || (route == "/slow-start" && start == 0))) await Task.Delay(ChunkDelayMs);
             }
             return true;
         }

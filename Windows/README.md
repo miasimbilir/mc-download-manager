@@ -43,6 +43,8 @@ macOS app's; 2.1 brought in the extension and the new features of macOS 1.4.1.
   week instead of refusing the rest every time.
 - **The question does not spend the link** — size and name are asked with a HEAD request that fetches no content;
   sites that refuse split downloads now show the size too, and a refusal (404 and the like) shows in the question.
+- **Speed graph** — in the download window, right above the progress bar: the file's speed from the start (like
+  Windows' copy dialog, it grows to the right as the download goes on), with the current, average and peak speed.
 - **Theme and accent colour** — Settings ▸ General ▸ Appearance: same as Windows, light or dark; the accent colour
   is Windows' own or one of six swatches (buttons, check boxes, progress bars).
 - Small fixes: "Start with Windows" survives an uninstall and reinstall; the subtitle switch in the quality question

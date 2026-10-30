@@ -96,6 +96,11 @@ void Shot(Window w, string name, Action? before = null)
     w.Hide();
 }
 
+// Speeds from the start up to where each download is now, for the graph in the download window.
+var wobble = new Random(3);
+for (int s = 0; s <= 110; s++) active.History.Add((8 + 30 * (1 - Math.Exp(-s / 14.0)) + wobble.NextDouble() * 1.2) * MB, active.Progress * s / 110);
+for (int s = 0; s <= 80; s++) paused.History.Add((9 + 4 * Math.Sin(s / 6.0) + wobble.NextDouble()) * MB, paused.Progress * s / 80);
+
 foreach (var theme in new[] { ThemeVariant.Light, ThemeVariant.Dark })
 {
     app.RequestedThemeVariant = theme;

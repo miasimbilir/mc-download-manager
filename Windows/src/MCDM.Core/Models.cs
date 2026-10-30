@@ -83,6 +83,8 @@ public sealed class DownloadItem : INotifyPropertyChanged
 
     // Not persisted
     [JsonIgnore] public double Speed { get; set; }
+    /// The speed from the start of the download, for the graph in the download window.
+    [JsonIgnore] public SpeedHistory History { get; } = new();
     [JsonIgnore] public string Log { get; set; } = "";
     [JsonIgnore] public string Stage { get; set; } = "";     // yt-dlp: current phase (downloading video/audio, merging…)
     /// Waiting for the user's answer to "download this file?".
@@ -235,6 +237,87 @@ public static class CaptureTypes
     {
         var ext = FileNames.Extension(url.AbsolutePath);
         return ext.Length > 0 && extensions.Contains(ext);
+    }
+}
+
+/// The speed of one download from its start, sampled once a second (main thread only). With a known size the
+/// samples are kept by how far the download had got (like Windows' copy dialog: the curve grows to the right as the
+/// file comes in); without one, by time, squeezed together as the download goes on.
+public sealed class SpeedHistory
+{
+    public const int Buckets = 200;
+    private readonly double[] byProgress = new double[Buckets];
+    private readonly int[] samplesIn = new int[Buckets];
+    private readonly List<double> byTime = [];
+    private int timeWeight = 1;         // samples merged into each byTime entry
+    private int pending;                // samples waiting to make up the next byTime entry
+    private double pendingSum, sum;
+    private int count;
+
+    /// Bumped on every change, so a window redraws only when there is something new.
+    public int Version { get; private set; }
+    public int Count => count;
+    public double Now { get; private set; }
+    public double Peak { get; private set; }
+    public double Average => count == 0 ? 0 : sum / count;
+
+    /// `progress`: 0–1 when the size is known, otherwise negative.
+    public void Add(double bytesPerSecond, double progress)
+    {
+        var v = Math.Max(0, bytesPerSecond);
+        Now = v;
+        Peak = Math.Max(Peak, v);
+        sum += v;
+        count++;
+        if (progress >= 0)
+        {
+            var i = Math.Clamp((int)(progress * Buckets), 0, Buckets - 1);
+            byProgress[i] = (byProgress[i] * samplesIn[i] + v) / (samplesIn[i] + 1);
+            samplesIn[i]++;
+        }
+        pendingSum += v;
+        if (++pending == timeWeight)
+        {
+            byTime.Add(pendingSum / pending);
+            pending = 0;
+            pendingSum = 0;
+            if (byTime.Count > Buckets)
+            {
+                // Twice as many seconds per point from here on.
+                for (int i = 0; i < byTime.Count / 2; i++) byTime[i] = (byTime[2 * i] + byTime[2 * i + 1]) / 2;
+                byTime.RemoveRange(byTime.Count / 2, byTime.Count - byTime.Count / 2);
+                timeWeight *= 2;
+            }
+        }
+        Version++;
+    }
+
+    public void Clear()
+    {
+        Array.Clear(byProgress);
+        Array.Clear(samplesIn);
+        byTime.Clear();
+        timeWeight = 1;
+        pending = 0;
+        pendingSum = sum = Now = Peak = 0;
+        count = 0;
+        Version++;
+    }
+
+    /// Points to draw: x from 0 to 1 across the bar, y in bytes per second. With a known size each point sits where the
+    /// download had got to (the last one at `progress`); otherwise they are spread over the whole width.
+    public List<(double X, double Speed)> Points(double progress)
+    {
+        var points = new List<(double, double)>();
+        if (progress >= 0 && samplesIn.Any(n => n > 0))
+        {
+            for (int i = 0; i < Buckets; i++)
+                if (samplesIn[i] > 0) points.Add(((i + 0.5) / Buckets, byProgress[i]));
+            if (points.Count > 0) points[^1] = (Math.Max(points[^1].Item1, Math.Min(1, progress)), points[^1].Item2);
+            return points;
+        }
+        for (int i = 0; i < byTime.Count; i++) points.Add((byTime.Count == 1 ? 1 : (double)i / (byTime.Count - 1), byTime[i]));
+        return points;
     }
 }
 

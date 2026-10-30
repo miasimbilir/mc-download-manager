@@ -450,7 +450,7 @@ public sealed class DownloadStore
         dl.OnConnectionLimit = n => MainThread.Post(() => Settings.RememberConnections(url, n, DateTime.UtcNow));
         dl.OnRestart = () => MainThread.Post(() =>
         {
-            if (Current()) Update(id, i => i.Note = Loc.T("the file on the server had changed, downloaded again from the start"));
+            if (Current()) Update(id, i => { i.Note = Loc.T("the file on the server had changed, downloaded again from the start"); i.History.Clear(); });
         });
         dl.OnFinish = error => MainThread.Post(() => { if (Current()) HandleFinish(id, error); });
         downloaders[id] = dl;
@@ -460,7 +460,7 @@ public sealed class DownloadStore
             i.ErrorMessage = null;
             i.Speed = 0;
             i.Note = null;
-            if (!resumable) { i.ReceivedBytes = 0; i.Segments = []; }
+            if (!resumable) { i.ReceivedBytes = 0; i.Segments = []; i.History.Clear(); }
         });
         dl.Start();
     }
@@ -1143,6 +1143,15 @@ public sealed class DownloadStore
         }
         foreach (var gone in samples.Keys.Where(k => !activeIds.Contains(k)).ToList()) samples.Remove(gone);
         tickCount++;
+        // One sample a second for the speed graph (videos included: yt-dlp reports their speed).
+        if (tickCount % 2 == 0)
+            foreach (var item in Items)
+                if (item.State == DownloadState.downloading)
+                {
+                    item.History.Add(item.Speed, item.TotalBytes > 0 ? item.Progress : -1);
+                    item.Touch();
+                    dirty = true;
+                }
         if (activeIds.Count > 0 && tickCount % 10 == 0) Save();     // segment state goes to disk every 5 s
         if (dirty) RaiseChanged();
     }

@@ -42,6 +42,7 @@
  "Lists the resolutions the video really offers, with their sizes, and audio only (MP3 / M4A). Works wherever yt-dlp does: YouTube, X, Instagram and others. When it is off, the choices below apply.": "Videonun gerçekten sunduğu çözünürlükleri boyutlarıyla ve yalnızca ses (MP3 / M4A) seçeneğini listeler. yt-dlp'nin çalıştığı her yerde geçerlidir: YouTube, X, Instagram ve diğerleri. Kapalıyken aşağıdaki seçimler uygulanır.",
  "Move File to Recycle Bin and Remove": "Dosyayı Geri Dönüşüm Kutusu'na Taşı ve Listeden Kaldır",
  "No supported browser was found (Google Chrome, Microsoft Edge, Brave, Opera, Firefox).": "Desteklenen bir tarayıcı bulunamadı (Google Chrome, Microsoft Edge, Brave, Opera, Firefox).",
+ "Now {0}   Average {1}   Peak {2}": "Anlık {0}   Ortalama {1}   En yüksek {2}",
  "Old version — add it again with the setup wizard": "Eski sürüm — kurulum sihirbazıyla yeniden ekleyin",
  "Old version — click “Reload” on the extensions page": "Eski sürüm — eklentiler sayfasında “Yeniden yükle”ye tıklayın",
  "On the extensions page, switch on “Developer mode” (top right in Chrome, Brave and Opera, in the left-hand menu in Edge).": "Eklentiler sayfasında “Geliştirici modu”nu açın (Chrome, Brave ve Opera'da sağ üstte, Edge'de soldaki menüde).",

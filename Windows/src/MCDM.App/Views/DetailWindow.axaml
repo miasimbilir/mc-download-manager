@@ -40,7 +40,13 @@
         <TextBlock Grid.Row="7" Grid.Column="1" x:Name="SaveText" />
       </Grid>
 
-      <c:SegmentBar x:Name="Bar" Height="7" Track="{DynamicResource TrackBrush}" Fill="{DynamicResource AccentBrush}" />
+      <!-- The speed from the start, right on top of the progress bar and as wide as it. -->
+      <StackPanel Spacing="4">
+        <c:SpeedGraph x:Name="Graph" Height="74" Stroke="{DynamicResource AccentBrush}" Grid="{DynamicResource LineBrush}"
+                      Label="{DynamicResource SecondaryTextBrush}" />
+        <c:SegmentBar x:Name="Bar" Height="7" Track="{DynamicResource TrackBrush}" Fill="{DynamicResource AccentBrush}" />
+        <TextBlock x:Name="GraphStats" Classes="caption" Margin="0,2,0,0" />
+      </StackPanel>
 
       <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
         <Button x:Name="ToggleDetails" MinWidth="130" HorizontalContentAlignment="Center" />

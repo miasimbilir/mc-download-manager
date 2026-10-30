@@ -13,6 +13,7 @@ public partial class DetailWindow : Window
     private readonly DownloadItem item = null!;
     private bool showDetails = true;
     private string lastLog = "";
+    private int graphVersion = -1;
 
     public DetailWindow() => InitializeComponent();      // designer
 
@@ -94,6 +95,19 @@ public partial class DetailWindow : Window
         var save = item.FinalPath ?? app.Store.DestinationPath(item);
         SaveText.Text = save;
         ToolTip.SetTip(SaveText, save);
+
+        var history = item.History;
+        var graph = history.Count > 1 && item.State is DownloadState.downloading or DownloadState.paused;
+        Graph.IsVisible = graph;
+        GraphStats.IsVisible = graph;
+        Graph.Paused = item.State == DownloadState.paused;
+        if (graph && history.Version != graphVersion)
+        {
+            graphVersion = history.Version;
+            Graph.SetPoints(history.Points(item.TotalBytes > 0 ? item.Progress : -1));
+            GraphStats.Text = Loc.T("Now {0}   Average {1}   Peak {2}",
+                item.State == DownloadState.downloading ? Fmt.Speed(history.Now) : "—", Fmt.Speed(history.Average), Fmt.Speed(history.Peak));
+        }
 
         Bar.Fallback = item.Progress;
         Bar.Paused = item.State == DownloadState.paused;

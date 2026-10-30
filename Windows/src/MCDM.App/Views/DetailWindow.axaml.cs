@@ -109,6 +109,8 @@ public partial class DetailWindow : Window
                 item.State == DownloadState.downloading ? Fmt.Speed(history.Now) : "—", Fmt.Speed(history.Average), Fmt.Speed(history.Peak));
         }
 
+        Bar.Segments = item.Segments;
+        Bar.Total = item.TotalBytes;
         Bar.Fallback = item.Progress;
         Bar.Paused = item.State == DownloadState.paused;
         Bar.Failed = item.State == DownloadState.failed;
@@ -141,11 +143,6 @@ public partial class DetailWindow : Window
         }
         else
         {
-            ConnBar.Segments = item.Segments;
-            ConnBar.Total = item.TotalBytes;
-            ConnBar.Fallback = item.Progress;
-            ConnBar.Paused = item.State == DownloadState.paused;
-            ConnBar.Failed = item.State == DownloadState.failed;
             Connections.ItemsSource = ConnectionRows();
         }
     }

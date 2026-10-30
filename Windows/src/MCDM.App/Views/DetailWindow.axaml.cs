@@ -105,9 +105,11 @@ public partial class DetailWindow : Window
         {
             graphVersion = history.Version;
             Graph.SetPoints(history.Points(item.TotalBytes > 0 ? item.Progress : -1));
+        }
+        // Outside the version check: pausing adds no sample, yet "Now" has to turn into "—" at once.
+        if (graph)
             GraphStats.Text = Loc.T("Now {0}   Average {1}   Peak {2}",
                 item.State == DownloadState.downloading ? Fmt.Speed(history.Now) : "—", Fmt.Speed(history.Average), Fmt.Speed(history.Peak));
-        }
 
         Bar.Segments = item.Segments;
         Bar.Total = item.TotalBytes;

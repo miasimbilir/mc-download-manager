@@ -32,6 +32,13 @@ uygulamasıyla aynı kalıyor; 2.1, macOS 1.4.1'in eklentisini ve yeniliklerini 
 - **Bildirim alanında yaşar** — pencere kapansa da köprü açık kalır; istenirse oturum açılışında başlar.
   Arayüz sistem dilini izler: Türkçe ve İngilizce.
 
+### 2.2.1
+
+- Ayarlar ▸ Tarayıcı Eklentileri'nde her tarayıcının kendi simgesi (bilgisayarda kurulu tarayıcıdan okunur).
+- Daha önce bağlanmış ama o an sessiz olan eklenti "Kurulu (1.4.1) — tarayıcı açılınca bağlanır" diye görünür; hiç kurulmamış
+  eklentiyle karışmaz.
+- Firefox kapalıyken "Firefox'a Ekle": Firefox açıldıktan sonra eklenti verilmeden önce daha uzun beklenir.
+
 ### 2.2 ile gelenler
 
 - **Bağlantılar sonuna kadar çalışır** — parçasını bitiren bağlantı, en çok işi kalan parçanın yarısını devralır;

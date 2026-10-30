@@ -31,6 +31,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private List<string> chromiumExtensionIds = [];
     private List<string> browserOnlySites = [];
     private Dictionary<string, HostLimit> hostLimits = new(StringComparer.Ordinal);
+    private Dictionary<string, string> extensionsSeen = new(StringComparer.Ordinal);
     private bool askBeforeDownload = true;
     private bool speedLimitEnabled;
     private int speedLimitKb = 1024;
@@ -75,6 +76,17 @@ public sealed class AppSettings : INotifyPropertyChanged
     public List<string> BrowserOnlySites { get => browserOnlySites; set => Set(ref browserOnlySites, Sites.With(value, null, false)); }
 
     public void SetBrowserOnly(string? hostOrUrl, bool on) => BrowserOnlySites = Sites.With(browserOnlySites, hostOrUrl, on);
+
+    /// The extension version each browser (bridge id: chrome, edge, opera…) last reported: Settings can tell an extension
+    /// that is installed but quiet right now (its browser closed, no page open yet) from one that was never loaded.
+    public Dictionary<string, string> ExtensionsSeen { get => extensionsSeen; set => Set(ref extensionsSeen, value ?? new(StringComparer.Ordinal)); }
+
+    /// Written only when the version differs from the one stored (every bridge request calls this).
+    public void NoteExtensionSeen(string browser, string version)
+    {
+        if (extensionsSeen.TryGetValue(browser, out var known) && known == version) return;
+        ExtensionsSeen = new Dictionary<string, string>(extensionsSeen, StringComparer.Ordinal) { [browser] = version };
+    }
 
     /// Servers that accepted fewer connections than asked for, by site key (Sites.Key): the next download from there starts with that many.
     public Dictionary<string, HostLimit> HostLimits { get => hostLimits; set => Set(ref hostLimits, value ?? new(StringComparer.Ordinal)); }

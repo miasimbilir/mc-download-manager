@@ -32,6 +32,13 @@ macOS app's; 2.1 brought in the extension and the new features of macOS 1.4.1.
 - **Lives in the notification area** — the bridge stays up when the window is closed; optional start at
   sign-in. English and Turkish, following the system language.
 
+### 2.2.1
+
+- Settings ▸ Browser Extensions shows each browser's own icon (read from the installed browser).
+- An extension that connected before but is quiet right now shows as "Installed (1.4.1) — connects when the browser is open" instead of
+  looking like one that was never installed.
+- "Add to Firefox" with Firefox closed waits longer after Firefox starts before handing over the add-on.
+
 ### New in 2.2
 
 - **Connections stay busy to the end** — a connection that finishes its part takes over half of the largest part

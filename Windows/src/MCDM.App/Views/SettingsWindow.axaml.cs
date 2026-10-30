@@ -255,7 +255,9 @@ public partial class SettingsWindow : Window
             var icon = new PathIcon { Width = 15, Height = 15, VerticalAlignment = VerticalAlignment.Center };
             var status = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(7, 0, 0, 0) };
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), MinHeight = 30 };
-            row.Children.Add(new PathIcon { Data = Icons.Get("IconGlobe"), Width = 16, Height = 16, Margin = new Thickness(0, 0, 10, 0) });
+            var logo = BrowserIcons.View(b, 18);
+            logo.Margin = new Thickness(0, 0, 10, 0);
+            row.Children.Add(logo);
             var name = new TextBlock { Text = b.Name, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(name, 1);
             row.Children.Add(name);
@@ -278,9 +280,14 @@ public partial class SettingsWindow : Window
             // Connected, but with the code of an earlier version: the browser has to load the new files.
             var outdated = connected && app.Server.IsExtensionOutdated(b.Id);
             var prepared = !b.Firefox && BrowserIntegration.FilesPrepared(b);
+            // Talked to the bridge before (in this or an earlier session): installed, only quiet right now.
+            var seen = !connected && settings.ExtensionsSeen.TryGetValue(b.Id, out var last) ? last : null;
             row.Text.Text = outdated ? (b.Firefox ? Loc.T("Old version — add it again with the setup wizard") : Loc.T("Old version — click “Reload” on the extensions page"))
-                : connected ? (app.Server.ExtensionVersion(b.Id) is { Length: > 0 } v ? Loc.T("Connected ({0})", v) : Loc.T("Connected")) : prepared ? Loc.T("Files prepared, not connected") : Loc.T("Not installed");
-            row.Icon.Data = Icons.Get(outdated ? "IconWarningFilled" : connected ? "IconCheckmarkCircleFilled" : "IconCircle");
+                : connected ? (app.Server.ExtensionVersion(b.Id) is { Length: > 0 } v ? Loc.T("Connected ({0})", v) : Loc.T("Connected"))
+                : seen != null ? (seen.Length > 0 ? Loc.T("Installed ({0}) — connects when the browser is open", seen) : Loc.T("Installed — connects when the browser is open"))
+                : prepared ? Loc.T("Files prepared, not connected") : Loc.T("Not installed");
+            ToolTip.SetTip(row.Text, seen != null ? Loc.T("The extension connects as soon as the browser is open and a page has been loaded.") : null);
+            row.Icon.Data = Icons.Get(outdated ? "IconWarningFilled" : connected ? "IconCheckmarkCircleFilled" : seen != null ? "IconCheckmarkCircle" : "IconCircle");
             var brush = new DynamicResourceExtension(outdated ? "WarnBrush" : connected ? "OkBrush" : "SecondaryTextBrush");
             row.Icon[!ForegroundProperty] = brush;
             row.Text[!TextBlock.ForegroundProperty] = brush;

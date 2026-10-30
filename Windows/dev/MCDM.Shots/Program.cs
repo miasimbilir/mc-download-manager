@@ -114,6 +114,8 @@ foreach (var theme in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     Shot(new DetailWindow(app, done), "detail-done");
     Shot(new DetailWindow(app, failed), "detail-failed");
     Shot(new AddDownloadWindow(app), "add");
+    // 2.2.1: an extension that spoke in an earlier session shows as installed while its browser is closed.
+    app.Settings.NoteExtensionSeen("chrome", "1.4.1");
     for (int tab = 0; tab < 4; tab++)
     {
         var s = new SettingsWindow(app) { Height = tab is 0 or 3 ? 1080 : 640 };

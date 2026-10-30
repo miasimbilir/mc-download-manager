@@ -45,6 +45,23 @@ public class MiscTests
     }
 
     [Fact]
+    public void An_extension_that_spoke_once_is_remembered_with_its_version()
+    {
+        var file = Path.Combine(Setup.TempDir(), "settings.json");
+        var s = AppSettings.Load(file);
+        Assert.Empty(s.ExtensionsSeen);
+        s.NoteExtensionSeen("chrome", "1.4.1");
+        var before = s.ExtensionsSeen;
+        s.NoteExtensionSeen("chrome", "1.4.1");
+        Assert.Same(before, s.ExtensionsSeen);          // same version: nothing written
+        s.NoteExtensionSeen("chrome", "1.4.2");
+        s.NoteExtensionSeen("firefox", "");
+        var loaded = AppSettings.Load(file);
+        Assert.Equal("1.4.2", loaded.ExtensionsSeen["chrome"]);
+        Assert.Equal("", loaded.ExtensionsSeen["firefox"]);
+    }
+
+    [Fact]
     public void Long_names_are_cut_but_keep_their_extension()
     {
         var n = FileNames.Sanitize(new string('a', 400) + ".mkv");

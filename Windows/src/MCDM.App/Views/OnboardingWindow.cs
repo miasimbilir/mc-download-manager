@@ -77,7 +77,7 @@ public sealed class OnboardingWindow : Window
             var list = new StackPanel { Spacing = 8 };
             var installed = BrowserIntegration.InstalledBrowsers;
             foreach (var b in installed)
-                list.Children.Add(Ui.Row(new PathIcon { Data = Icons.Get("IconGlobe") }, new TextBlock { Text = b.Name }));
+                list.Children.Add(Ui.Row(BrowserIcons.View(b), new TextBlock { Text = b.Name }));
             if (installed.Count == 0)
                 list.Children.Add(Ui.Text(Loc.T("No supported browser was found (Google Chrome, Microsoft Edge, Brave, Opera, Firefox)."), "caption"));
             body.Children.Add(list);

@@ -1,4 +1,5 @@
-# winget manifest (installer). InstallerUrl and InstallerSha256 must describe the published Setup.exe.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+
 PackageIdentifier: miasimbilir.MCDownloadManager
 PackageVersion: 2.2.1
 MinimumOSVersion: 10.0.17763.0
@@ -15,4 +16,4 @@ Installers:
   InstallerUrl: https://github.com/miasimbilir/mc-download-manager/releases/download/windows-v2.2.1/MC-Download-Manager-2.2.1-Setup.exe
   InstallerSha256: D007DE0926B65002AD05C24B562B563B916EECDB256CF319AAD362EF3B52C5A5
 ManifestType: installer
-ManifestVersion: 1.6.0
+ManifestVersion: 1.12.0

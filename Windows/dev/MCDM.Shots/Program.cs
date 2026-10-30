@@ -201,6 +201,24 @@ foreach (var (theme, accent) in new[] { ("dark", "#107C10"), ("light", "#8764B8"
 app.Settings.Theme = "system";
 app.Settings.AccentColor = "";
 
+// Release card pictures: dark theme, the store's speed sampler stopped so the graph shows exactly the curve below.
+(typeof(DownloadStore).GetField("timer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+    .GetValue(app.Store) as System.Threading.Timer)?.Change(Timeout.Infinite, Timeout.Infinite);
+app.Settings.Theme = "dark";
+active.History.Clear();
+for (int s = 0; s <= 120; s++) active.History.Add((7 + 31 * (1 - Math.Exp(-s / 16.0)) + wobble.NextDouble() * 1.4) * MB, active.Progress * s / 120);
+active.Speed = active.History.Now;
+active.Touch();
+Shot(new MainWindow(app), "promo-main");
+var promo = new DetailWindow(app, active);
+typeof(DetailWindow).GetField("showDetails", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(promo, false);
+Shot(promo, "promo-detail", () =>
+{
+    active.Speed = active.History.Now;
+    typeof(DetailWindow).GetMethod("Refresh", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(promo, null);
+});
+app.Settings.Theme = "system";
+
 // An empty list
 foreach (var i in app.Store.Items.ToList()) app.Store.Remove(i.Id);
 app.RequestedThemeVariant = ThemeVariant.Light;

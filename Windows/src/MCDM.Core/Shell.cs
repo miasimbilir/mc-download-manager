@@ -545,7 +545,9 @@ public static class BrowserIntegration
                 Task.Run(async () =>
                 {
                     for (int i = 0; i < 40 && !HasWindow(name); i++) await Task.Delay(300);
-                    await Task.Delay(1500);
+                    // The window comes well before Firefox listens for a second command line (1.5 s was too short:
+                    // only the new tab appeared).
+                    await Task.Delay(4000);
                     try { StartWith(exe, xpi); } catch { }
                 });
                 return true;

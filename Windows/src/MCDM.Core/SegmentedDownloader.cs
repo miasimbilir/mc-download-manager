@@ -34,7 +34,9 @@ public sealed class SegmentedDownloader
     public Action<long, SegmentInfo[]>? OnProgress;
     /// null = success. Not raised after Stop().
     public Action<Exception?>? OnFinish;
-    /// The server accepted fewer parallel connections than asked for (1: no parallel requests at all). Raised once, at the end.
+    /// The server accepted fewer parallel connections than asked for (1: no parallel requests at all). Raised once, at
+    /// the end of a download that succeeded with that many, so a passing overload or a link that was refused for its
+    /// own reasons does not mark the whole site.
     public Action<int>? OnConnectionLimit;
     /// The file on the server is not the one the parts on disk came from: the download starts over.
     public Action? OnRestart;
@@ -60,6 +62,8 @@ public sealed class SegmentedDownloader
     private long expectedTotal = -1;
     private bool resuming;              // the parts on disk come from an earlier run
     private int? acceptedConnections;
+    private bool limited;               // a 429/503 came while other connections were receiving data
+    private int transferring, peakTransferring;     // connections receiving data now / at most at once
     private int restarts;
     private const int MaxRestarts = 2;
 
@@ -129,7 +133,11 @@ public sealed class SegmentedDownloader
 
         var (received, snapshot) = Snapshot();
         OnProgress?.Invoke(received, snapshot);
-        if (acceptedConnections is { } accepted) OnConnectionLimit?.Invoke(accepted);
+        // Extra connections refused while others were served, and never as many at work as asked for: that is what
+        // the server accepts. 503s while nothing was coming in (an overloaded server) say nothing about a limit.
+        if (limited && peakTransferring > 0 && peakTransferring < Math.Max(1, config.SegmentCount))
+            acceptedConnections = Math.Min(acceptedConnections ?? int.MaxValue, peakTransferring);
+        if (error == null && !stopped && acceptedConnections is { } accepted) OnConnectionLimit?.Invoke(accepted);
         if (!stopped) OnFinish?.Invoke(error);
     }
 
@@ -474,7 +482,7 @@ public sealed class SegmentedDownloader
         void Throttle(int i, int status)
         {
             // 429 and 503 are how file servers say "too many connections": the others that are open are what it accepts.
-            if (status is 429 or 503) acceptedConnections = Math.Min(acceptedConnections ?? int.MaxValue, Math.Max(1, active - 1));
+            if (status is 429 or 503 && transferring > 0) limited = true;
             activeLimit = Math.Max(1, Math.Min(activeLimit, active - 1) - 1);
             var attempt = ++retries[i];
             if (attempt > MaxAttempts) { Fatal(new HttpStatusError(status)); return; }
@@ -540,13 +548,24 @@ public sealed class SegmentedDownloader
                     }
                     else if (status == 206)
                     {
-                        lock (gate) retries[i] = 0;
-                        await CopyAsync(resp,
-                            () => { lock (gate) return (segments[i].Start + segments[i].Received, segments[i].Length - segments[i].Received); },
-                            // A read already under way when the part was split may run past its new end: those bytes
-                            // are the same file, written where they belong, and are not counted twice.
-                            n => { lock (gate) segments[i].Received = Math.Min(segments[i].Length, segments[i].Received + n); },
-                            ct).ConfigureAwait(false);
+                        lock (gate)
+                        {
+                            retries[i] = 0;
+                            peakTransferring = Math.Max(peakTransferring, ++transferring);
+                        }
+                        try
+                        {
+                            await CopyAsync(resp,
+                                () => { lock (gate) return (segments[i].Start + segments[i].Received, segments[i].Length - segments[i].Received); },
+                                // A read already under way when the part was split may run past its new end: those bytes
+                                // are the same file, written where they belong, and are not counted twice.
+                                n => { lock (gate) segments[i].Received = Math.Min(segments[i].Length, segments[i].Received + n); },
+                                ct).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            lock (gate) transferring--;
+                        }
                         lock (gate)
                         {
                             if (segments[i].IsDone) activeLimit = Math.Min(limit, activeLimit + 1);
@@ -632,6 +651,9 @@ public sealed class SegmentedDownloader
             if (++restarts > MaxRestarts) throw new DownloadFailure(Loc.T("The file on the server keeps changing"));
             CloseFile();
             lock (gate) segments = [];
+            // The item drops the old parts now: were the app to stop before the new ones are reported, a later
+            // resume would trust them, against a fresh part file and the new file's validators.
+            OnProgress?.Invoke(0, []);
             OnRestart?.Invoke();
             await RunFreshAsync(stop).ConfigureAwait(false);
             return;

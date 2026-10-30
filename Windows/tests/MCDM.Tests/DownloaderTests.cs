@@ -326,7 +326,7 @@ public class DownloaderTests
         dl.Start();
         Assert.Null(await done.Task.WaitAsync(TimeSpan.FromSeconds(60)));
         Assert.NotNull(accepted);
-        Assert.InRange(accepted!.Value, 1, 2);
+        Assert.InRange(accepted!.Value, 1, 3);         // see A_server_that_took_fewer_connections_gets_that_many_next_time
     }
 
     [Fact]
@@ -346,6 +346,56 @@ public class DownloaderTests
         dl.Start();
         Assert.Null(await done.Task.WaitAsync(TimeSpan.FromSeconds(30)));
         Assert.Equal(1, accepted);
+    }
+
+    [Fact]
+    public async Task An_overloaded_server_is_not_taken_for_a_limit()
+    {
+        // Every first request gets 503 before anything comes in: the server is busy, not limiting connections.
+        using var server = new TestServer(3 * 1024 * 1024) { BusyFirst = 8 };
+        int? accepted = null;
+        var done = new TaskCompletionSource<Exception?>();
+        var dl = new SegmentedDownloader(new SegmentedDownloader.Configuration
+        {
+            Url = new Uri(server.Url("/busy")), PartPath = Path.Combine(Setup.TempDir(), "file.part"), SegmentCount = 8, MinSegmentSize = 64 * 1024,
+        })
+        {
+            OnConnectionLimit = n => accepted = n,
+            OnFinish = e => done.TrySetResult(e),
+        };
+        dl.Start();
+        Assert.Null(await done.Task.WaitAsync(TimeSpan.FromSeconds(60)));
+        Assert.Null(accepted);
+    }
+
+    [Fact]
+    public async Task A_restart_drops_the_old_parts_from_the_item_at_once()
+    {
+        using var server = new TestServer(4 * 1024 * 1024) { ChunkDelayMs = 60 };
+        var (part, segs, probe) = await Interrupted(server, "/etag");
+        var replaced = new byte[server.Data.Length];
+        new Random(8).NextBytes(replaced);
+        server.Data = replaced;
+        server.Version = 2;
+        server.ChunkDelayMs = 0;
+        var reports = new List<(long Received, int Parts)>();
+        var restartAt = -1;
+        var done = new TaskCompletionSource<Exception?>();
+        var dl = new SegmentedDownloader(new SegmentedDownloader.Configuration
+        {
+            Url = new Uri(server.Url("/etag")), PartPath = part, SegmentCount = 4, MinSegmentSize = 64 * 1024,
+            ResumeSegments = [.. segs], ResumeTotal = replaced.Length, ResumeETag = probe.ETag,
+        })
+        {
+            OnProgress = (r, s) => { lock (reports) reports.Add((r, s.Length)); },
+            OnRestart = () => { lock (reports) restartAt = reports.Count; },
+            OnFinish = e => done.TrySetResult(e),
+        };
+        dl.Start();
+        Assert.Null(await done.Task.WaitAsync(TimeSpan.FromSeconds(30)));
+        // Before the restart is announced, the item has been told that nothing of the old parts is left.
+        Assert.True(restartAt > 0);
+        Assert.Equal((0L, 0), reports[restartAt - 1]);
     }
 
     [Fact]

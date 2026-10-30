@@ -162,9 +162,6 @@ public static class Shell
         else key.DeleteValue(AppInfo.Name, false);
     }
 
-    /// The app is portable: if its folder was moved since startup was enabled, point the entry at the new
-    /// place. An entry whose program still exists is left alone — a second copy started once (a build
-    /// folder found by Windows Search, say) must not take over from the installed one.
     /// Uninstalling removes the Run entry (it would point at a missing program); installing again does not write it
     /// back, and the welcome window that asks is not shown a second time. The choice is kept in the settings and the
     /// entry restored from it. Settings from before this was kept take the registry's word once.
@@ -179,6 +176,9 @@ public static class Shell
         catch { }
     }
 
+    /// The app is portable: if its folder was moved since startup was enabled, point the entry at the new
+    /// place. An entry whose program still exists is left alone — a second copy started once (a build
+    /// folder found by Windows Search, say) must not take over from the installed one.
     public static void RefreshStartupPath()
     {
         if (!OperatingSystem.IsWindows()) return;

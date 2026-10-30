@@ -18,6 +18,7 @@ public sealed class TestServer : IDisposable
     public ConcurrentQueue<(string Path, Dictionary<string, string> Headers, string Method)> Requests { get; } = new();
     public int MaxConcurrent;           // /throttle: answer 429 above this many open transfers
     public int DropFirst;               // /flaky: cut this many range responses short
+    public int BusyFirst;               // /busy: answer this many part requests with 503 (an overloaded server)
     public int ChunkDelayMs;            // /slow: pause between chunks
     private int concurrent;
     public int PeakConcurrent;
@@ -138,6 +139,13 @@ public sealed class TestServer : IDisposable
             case "/forbidden":
                 await Head(s, "403 Forbidden", "Content-Length: 0");
                 return true;
+            case "/busy":
+                if (range is not null and not (0, 0) && Interlocked.Decrement(ref BusyFirst) >= 0)
+                {
+                    await Head(s, "503 Service Unavailable", "Content-Length: 0", "Connection: close");
+                    return false;
+                }
+                break;
             case "/head-refused":
                 // Signed links are often signed for GET only.
                 if (head) { await Head(s, "403 Forbidden", "Content-Length: 0"); return true; }

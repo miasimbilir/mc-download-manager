@@ -111,14 +111,16 @@ public class StoreTests
         var first = rig.Add(server.Url("/throttle"));
         await rig.Wait(first, DownloadState.completed, 60);
         await Setup.Until(() => rig.On(s => rig.Settings.ConnectionLimit(server.Url("/throttle"), DateTime.UtcNow)) != null, what: "the limit to be remembered");
-        Assert.InRange(rig.Settings.ConnectionLimit("127.0.0.1", DateTime.UtcNow)!.Value, 1, 2);
-        Assert.True(server.Throttled > 0);
-
-        // The next file from there starts with that many: the server has nothing to refuse.
+        // 2, or 3 when a connection the server had finished was still reading its last bytes: an over-count corrects
+        // itself (the next download is refused again and the lower number kept), an under-count would not.
+        Assert.InRange(rig.Settings.ConnectionLimit("127.0.0.1", DateTime.UtcNow)!.Value, 1, 3);
         var refusedBefore = server.Throttled;
+        Assert.True(refusedBefore >= 5, $"{refusedBefore} refusals");
+
+        // The next file from there starts with that many: little or nothing for the server to refuse.
         var second = rig.Add(server.Url("/throttle"));
         await rig.Wait(second, DownloadState.completed, 60);
-        Assert.Equal(refusedBefore, server.Throttled);
+        Assert.True(server.Throttled - refusedBefore <= 2, $"{server.Throttled - refusedBefore} refusals the second time");
         Assert.Equal(server.Data, File.ReadAllBytes(second.FinalPath!));
     }
 

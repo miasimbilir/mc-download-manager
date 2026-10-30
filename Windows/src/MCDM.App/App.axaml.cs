@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Styling;
+using Avalonia.Themes.Fluent;
 using Avalonia.Media;
 using Avalonia.Threading;
 using MCDM.App.Views;
@@ -36,11 +38,25 @@ public partial class App : Application, IStoreUi
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
+    /// Light or dark as chosen in Settings (or as Windows is), and the accent colour of buttons, check boxes and
+    /// progress bars. Open windows follow at once.
+    internal void ApplyAppearance()
+    {
+        RequestedThemeVariant = Settings.Theme switch
+        {
+            "light" => ThemeVariant.Light,
+            "dark" => ThemeVariant.Dark,
+            _ => ThemeVariant.Default,
+        };
+        Color? picked = Color.TryParse(Settings.AccentColor, out var c) ? c : null;
+        if (Styles.OfType<FluentTheme>().FirstOrDefault() is { } fluent)
+            foreach (var palette in fluent.Palettes.Values) palette.Accent = picked ?? default;     // default: Windows' own
+        var accent = picked ?? (this.TryFindResource("SystemAccentColor", ActualThemeVariant, out var system) && system is Color s ? s : Color.FromRgb(0x2F, 0x6F, 0xEB));
+        Resources["AccentBrush"] = new SolidColorBrush(accent);
+    }
+
     public override void OnFrameworkInitializationCompleted()
     {
-        if (!Resources.ContainsKey("AccentBrush"))
-            Resources["AccentBrush"] = new SolidColorBrush(this.TryFindResource("SystemAccentColor", ActualThemeVariant, out var c) && c is Color color ? color : Color.FromRgb(0x2F, 0x6F, 0xEB));
-
         // A failing callback is logged instead of taking the whole app down with it.
         MainThread.Use(a => Dispatcher.UIThread.Post(() =>
         {
@@ -52,6 +68,8 @@ public partial class App : Application, IStoreUi
             e.Handled = true;
         };
         Settings = AppSettings.Load();
+        ApplyAppearance();
+        Settings.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(AppSettings.Theme) or nameof(AppSettings.AccentColor)) ApplyAppearance(); };
         Store = new DownloadStore(Settings) { Ui = this };
         Server = new ServerController(Store, Settings);
         Clipboard = new ClipboardWatcher(this);

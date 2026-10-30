@@ -43,6 +43,8 @@ uygulamasıyla aynı kalıyor; 2.1, macOS 1.4.1'in eklentisini ve yeniliklerini 
   bağlantıyla indirilir; her seferinde yeniden reddedilmez.
 - **Soru penceresi bağlantıyı harcamaz** — boyut ve ad artık içerik istemeyen bir HEAD isteğiyle sorulur; parçalı
   indirmeyi reddeden sitelerde de boyut görünür, sunucu dosyayı vermiyorsa (404 gibi) bu pencerede yazar.
+- **Tema ve vurgu rengi** — Ayarlar ▸ Genel ▸ Görünüm: Windows'la aynı, açık ya da koyu; vurgu rengi Windows'unki ya
+  da altı hazır renkten biri (düğmeler, onay kutuları, ilerleme çubukları).
 - Küçük düzeltmeler: kaldırıp yeniden kurunca "Windows açılınca başlat" yerinde kalır; kalite sorusundaki altyazı
   kutusu yalnız o videoya uygulanır; video adı indirme başlamadan da son hâliyle (`：`) görünür; tarayıcıya devredilen
   indirmenin penceresi kapanır; art arda gelen sorular ilk pencerenin yanından açılır; Firefox kapalıyken "Firefox'a

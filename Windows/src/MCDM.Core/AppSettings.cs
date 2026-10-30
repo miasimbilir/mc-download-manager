@@ -40,6 +40,8 @@ public sealed class AppSettings : INotifyPropertyChanged
     private string skippedVersion = "";
     private DateTime lastUpdateCheck;
     private bool? startWithWindows;
+    private string theme = "system";
+    private string accentColor = "";
 
     public int SegmentCount { get => segmentCount; set => Set(ref segmentCount, Math.Clamp(value, 1, 16)); }
     public int MaxConcurrent { get => maxConcurrent; set => Set(ref maxConcurrent, Math.Clamp(value, 1, 10)); }
@@ -155,6 +157,18 @@ public sealed class AppSettings : INotifyPropertyChanged
     /// "Skip This Version": this release is not offered again (a later one is).
     public string SkippedVersion { get => skippedVersion; set => Set(ref skippedVersion, value ?? ""); }
     public DateTime LastUpdateCheck { get => lastUpdateCheck; set => Set(ref lastUpdateCheck, value); }
+
+    /// "system" (follow Windows), "light" or "dark".
+    public string Theme { get => theme; set => Set(ref theme, value is "light" or "dark" ? value : "system"); }
+
+    /// "" = Windows' accent colour, otherwise one of AccentColors.
+    public string AccentColor { get => accentColor; set => Set(ref accentColor, AccentColors.Any(a => a.Hex == value) ? value! : ""); }
+
+    /// Windows' own accent swatches, so a picked colour looks the way it would if it were picked in Windows.
+    public static readonly (string Hex, string Name)[] AccentColors =
+    [
+        ("#0078D4", "Blue"), ("#038387", "Teal"), ("#107C10", "Green"), ("#8764B8", "Purple"), ("#CA5010", "Orange"), ("#E3008C", "Pink"),
+    ];
 
     /// "Start with Windows" as the user last chose it (the Run entry itself is in the registry); null = not known yet.
     public bool? StartWithWindows { get => startWithWindows; set => Set(ref startWithWindows, value); }

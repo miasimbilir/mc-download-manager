@@ -39,7 +39,13 @@
   </Application.Resources>
 
   <Application.Styles>
-    <FluentTheme />
+    <FluentTheme>
+      <!-- Empty until an accent colour is picked in Settings (App.ApplyAppearance); then they carry it. -->
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light" />
+        <ColorPaletteResources x:Key="Dark" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
     <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
 
     <Style Selector="Window">
@@ -92,6 +98,17 @@
     </Style>
     <Style Selector="Button.accent:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <!-- Accent colour swatches (Settings ▸ General): keep their own colour on hover and press. -->
+    <Style Selector="Button.swatch:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{TemplateBinding Background}" />
+      <Setter Property="BorderBrush" Value="{TemplateBinding BorderBrush}" />
+      <Setter Property="Opacity" Value="0.85" />
+    </Style>
+    <Style Selector="Button.swatch:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{TemplateBinding Background}" />
+      <Setter Property="BorderBrush" Value="{TemplateBinding BorderBrush}" />
+      <Setter Property="Opacity" Value="0.7" />
     </Style>
     <Style Selector="PathIcon">
       <Setter Property="Width" Value="16" />

@@ -27,6 +27,24 @@ public class MiscTests
     public void Video_titles_get_the_names_yt_dlp_gives_them(string title, string expected) => Assert.Equal(expected, FileNames.LikeYtDlp(title));
 
     [Fact]
+    public void Theme_and_accent_colour_accept_only_known_values()
+    {
+        var file = Path.Combine(Setup.TempDir(), "settings.json");
+        var s = AppSettings.Load(file);
+        Assert.Equal("system", s.Theme);
+        Assert.Equal("", s.AccentColor);
+        s.Theme = "dark";
+        s.AccentColor = "#107C10";
+        Assert.Equal("dark", AppSettings.Load(file).Theme);
+        Assert.Equal("#107C10", AppSettings.Load(file).AccentColor);
+        s.Theme = "neon";
+        s.AccentColor = "#123456";
+        Assert.Equal("system", s.Theme);
+        Assert.Equal("", s.AccentColor);
+        Assert.All(AppSettings.AccentColors, a => Assert.Matches("^#[0-9A-F]{6}$", a.Hex));
+    }
+
+    [Fact]
     public void Long_names_are_cut_but_keep_their_extension()
     {
         var n = FileNames.Sanitize(new string('a', 400) + ".mkv");

@@ -76,6 +76,21 @@
           </Border>
 
           <Border Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="section" Text="{l:T 'Appearance'}" />
+              <Grid ColumnDefinitions="260,*">
+                <TextBlock Text="{l:T 'Theme'}" VerticalAlignment="Center" />
+                <ComboBox Grid.Column="1" x:Name="ThemeBox" HorizontalAlignment="Stretch" />
+              </Grid>
+              <Grid ColumnDefinitions="260,*">
+                <TextBlock Text="{l:T 'Accent colour'}" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" x:Name="AccentRow" Orientation="Horizontal" Spacing="8" />
+              </Grid>
+              <TextBlock Classes="caption" Text="{l:T 'The accent colour is used for buttons, check boxes and progress bars. “Windows” follows the colours chosen in Windows Settings ▸ Personalisation.'}" />
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
             <StackPanel Spacing="2">
               <TextBlock Classes="section" Text="{l:T 'Windows startup'}" />
               <CheckBox x:Name="Startup" Content="{l:T 'Start MC Download Manager when I sign in to Windows'}" />

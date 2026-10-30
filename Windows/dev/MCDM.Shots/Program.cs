@@ -182,6 +182,20 @@ foreach (var theme in new[] { ThemeVariant.Light, ThemeVariant.Dark })
     app.Store.WhenDone = QueueEndAction.None;
 }
 
+// 2.2: theme and accent colour chosen in Settings (they set RequestedThemeVariant themselves).
+foreach (var (theme, accent) in new[] { ("dark", "#107C10"), ("light", "#8764B8"), ("dark", "#CA5010") })
+{
+    app.Settings.Theme = theme;
+    app.Settings.AccentColor = accent;
+    var tag = $"{theme}-{accent.TrimStart('#').ToLowerInvariant()}";
+    Shot(new MainWindow(app), $"appearance-main-{tag}");
+    Shot(new DetailWindow(app, active), $"appearance-detail-{tag}");
+    var s = new SettingsWindow(app) { Height = 1180 };
+    Shot(s, $"appearance-settings-{tag}");
+}
+app.Settings.Theme = "system";
+app.Settings.AccentColor = "";
+
 // An empty list
 foreach (var i in app.Store.Items.ToList()) app.Store.Remove(i.Id);
 app.RequestedThemeVariant = ThemeVariant.Light;

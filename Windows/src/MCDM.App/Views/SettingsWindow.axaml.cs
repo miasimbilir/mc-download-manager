@@ -26,6 +26,33 @@ public partial class SettingsWindow : Window
         (-1, "Audio only (M4A)"), (-2, "Audio only (MP3)"),
     ];
 
+    /// "Windows" and a round swatch per colour; the chosen one carries a tick.
+    private void BuildAccentRow()
+    {
+        AccentRow.Children.Clear();
+        var system = new Button { Content = Loc.T("Windows"), VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(10, 4) };
+        if (settings.AccentColor == "") system.Classes.Add("accent");
+        system.Click += (_, _) => { settings.AccentColor = ""; BuildAccentRow(); };
+        AccentRow.Children.Add(system);
+        foreach (var (hex, name) in AppSettings.AccentColors)
+        {
+            var chosen = settings.AccentColor == hex;
+            var swatch = new Button
+            {
+                Classes = { "swatch" },
+                Width = 28, Height = 28, CornerRadius = new CornerRadius(14), Padding = new Thickness(0),
+                Background = new SolidColorBrush(Color.Parse(hex)),
+                BorderThickness = new Thickness(chosen ? 2 : 0), BorderBrush = Brushes.White,
+                HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
+                Content = chosen ? new PathIcon { Data = Icons.Get("IconCheckmark"), Foreground = Brushes.White, Width = 12, Height = 12 } : null,
+            };
+            ToolTip.SetTip(swatch, Loc.T(name));
+            Avalonia.Automation.AutomationProperties.SetName(swatch, Loc.T(name));
+            swatch.Click += (_, _) => { settings.AccentColor = hex; BuildAccentRow(); };
+            AccentRow.Children.Add(swatch);
+        }
+    }
+
     /// What the resolution box lists: the standard entries plus the current setting when it is none of them.
     private List<(int Tag, string Label)> heights = [];
     private bool fillingHeights;
@@ -130,6 +157,12 @@ public partial class SettingsWindow : Window
         SpeedLimitBox.Value = settings.SpeedLimitKb;
         SpeedLimitBox.ValueChanged += (_, e) => { if (e.NewValue is { } kb) settings.SpeedLimitKb = (int)kb; };
         SpeedLimitUnit.Text = Loc.T("{0}/s", "KB");
+
+        string[] themes = ["system", "light", "dark"];
+        ThemeBox.ItemsSource = new[] { Loc.T("Same as Windows"), Loc.T("Light"), Loc.T("Dark") };
+        ThemeBox.SelectedIndex = Math.Max(0, Array.IndexOf(themes, settings.Theme));
+        ThemeBox.SelectionChanged += (_, _) => { if (ThemeBox.SelectedIndex >= 0) settings.Theme = themes[ThemeBox.SelectedIndex]; };
+        BuildAccentRow();
 
         Startup.IsEnabled = Shell.StartupSupported;
         Startup.IsChecked = Shell.StartupEnabled;

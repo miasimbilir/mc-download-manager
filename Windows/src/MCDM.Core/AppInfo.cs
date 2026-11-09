@@ -7,7 +7,7 @@ public static class AppInfo
     public const string Name = "MC Download Manager";
     /// The Windows app's own version (its own line since 2.0; up to 1.3.0 it followed the macOS app).
     /// The extension popup shows it.
-    public const string Version = "2.2.1";
+    public const string Version = "2.2.2";
     public const int DefaultPort = 48213;
 }
 
@@ -20,8 +20,9 @@ public static class AppPaths
     public static string SettingsFile => Path.Combine(DataDir, "settings.json");
     public static string DownloadsFile => Path.Combine(DataDir, "downloads.json");
 
-    /// Folder of the running executable; `tools\` (yt-dlp, ffmpeg) and `ChromeExtension\` sit next to it.
+    /// Folder of the running executable; `ChromeExtension\` sits next to it.
     public static string AppDir { get; } = AppContext.BaseDirectory;
+    /// yt-dlp and ffmpeg came here with the app until 2.2.1; an installed copy upgraded since still has them.
     public static string BundledToolsDir => Path.Combine(AppDir, "tools");
 
     public static string DefaultDownloadDir { get; } = Path.Combine(DownloadsFolder(), AppInfo.Name);

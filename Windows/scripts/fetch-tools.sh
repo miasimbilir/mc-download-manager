@@ -1,5 +1,6 @@
 #!/bin/zsh
-# Downloads the Windows yt-dlp and ffmpeg binaries that get bundled with the app (into Windows/Tools/).
+# Downloads the Windows yt-dlp and ffmpeg binaries into Windows/Tools/. Not needed for a build any more (since 2.2.2 the
+# app downloads them for the first video); kept for trying a dev build against the single-file ffmpeg.
 # Sources:
 #   yt-dlp : https://github.com/yt-dlp/yt-dlp/releases            (yt-dlp.exe, checked against SHA2-256SUMS)
 #   ffmpeg : https://github.com/yt-dlp/FFmpeg-Builds/releases     (win64 GPL build, checked against checksums.sha256)

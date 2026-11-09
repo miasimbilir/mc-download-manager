@@ -107,13 +107,6 @@ public partial class App : Application, IStoreUi
                 if (message == "show") Dispatcher.UIThread.Post(ShowMainWindow);
                 else if (message == "quit") Dispatcher.UIThread.Post(Quit);
             });
-            // A copy without its tools folder cannot download or merge video; say so instead of failing later.
-            if (OperatingSystem.IsWindows() && !Shell.CompleteCopy
-                && (VideoDownloader.LocateYtDlp(Settings.YtdlpPath) == null || VideoDownloader.LocateFfmpeg() == null))
-                Dispatcher.UIThread.Post(() => _ = PromptWindow.Ask(null,
-                    Loc.T("This copy of the app is incomplete"),
-                    Loc.T("The copy in {0} has no “tools” folder next to it, so video downloads will not work. Start the app from the folder it was unpacked into, or from MC Download Manager in the Start menu.", AppPaths.AppDir.TrimEnd(Path.DirectorySeparatorChar)),
-                    [Loc.T("Close")]), DispatcherPriority.Background);
             // A little after start, then a few times a day; CheckForUpdatesAsync itself keeps it to once a day.
             updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
             updateTimer.Tick += (_, _) =>
@@ -229,9 +222,23 @@ public partial class App : Application, IStoreUi
         ToastWindow.Show(this, Loc.T("Download completed"), item.FileName, item);
     }
 
-    public async Task<(bool Install, bool DontAskAgain)> AskInstallDenoAsync()
+    public async Task<(bool Install, bool DontAskAgain)> AskInstallToolsAsync(IReadOnlyList<string> tools)
     {
         if (Headless) return (false, false);
+        if (tools is not ["deno"])
+        {
+            var lines = tools.Select(t => t switch
+            {
+                "yt-dlp" => Loc.T("• yt-dlp ({0}): finds the video and downloads it", ToolInstaller.YtDlpDownloadSize),
+                "ffmpeg" => Loc.T("• ffmpeg ({0}): joins the picture and the sound into one file", ToolInstaller.FfmpegDownloadSize),
+                _ => Loc.T("• deno ({0}): needed to unlock YouTube's video streams", ToolInstaller.DenoDownloadSize),
+            });
+            var (answer, _) = await PromptWindow.Ask(null,
+                Loc.T("Download the tools for videos?"),
+                Loc.T("Downloading videos needs these free tools. They are downloaded once from their official GitHub pages, checked, and kept in the app's data folder:") + "\n\n" + string.Join("\n", lines),
+                [Loc.T("Download"), Loc.T("Not Now")], cancelIndex: 1);
+            return (answer == 0, false);
+        }
         var (button, check) = await PromptWindow.Ask(null,
             Loc.T("Install the JavaScript runtime for YouTube?"),
             Loc.T("YouTube now requires yt-dlp to run JavaScript (deno) to unlock video streams. Without it, YouTube downloads may fail with errors such as “The page needs to be reloaded” or “n challenge solving failed”.\n\nMC Download Manager can download deno ({0}) from its official GitHub releases and keep it in its own app data folder.", ToolInstaller.DenoDownloadSize),

@@ -7,7 +7,7 @@ Installed with the installer (Setup.exe)? Then there is nothing to do: the app i
 
 Unpacked from the zip:
 1. Move this folder somewhere permanent (Documents, C:\Programs, …). Keep its contents together:
-   MCDownloadManager.exe, tools, ChromeExtension, FirefoxExtension.xpi.
+   MCDownloadManager.exe, ChromeExtension, FirefoxExtension.xpi.
 2. Double-click MCDownloadManager.exe.
    If Windows shows "Windows protected your PC": "More info" > "Run anyway".
    (The app is not code-signed; the source is open.)
@@ -60,4 +60,5 @@ Settings and the download list live in %APPDATA%\MC Download Manager.
 
 Windows version: https://github.com/miasimbilir/mc-download-manager
 Original macOS app: Mesut Çevik — https://github.com/mstcvk/mc-download-manager (MIT)
-Bundled tools: yt-dlp (Unlicense), FFmpeg (GPL, tools\ffmpeg-LICENSE.txt)
+Video tools do not come with the app: yt-dlp (Unlicense) and FFmpeg (GPL) are downloaded from their official GitHub
+pages into %APPDATA%\MC Download Manager\bin the first time a video is downloaded, after asking.

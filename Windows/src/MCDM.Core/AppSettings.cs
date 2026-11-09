@@ -32,6 +32,7 @@ public sealed class AppSettings : INotifyPropertyChanged
     private List<string> browserOnlySites = [];
     private Dictionary<string, HostLimit> hostLimits = new(StringComparer.Ordinal);
     private Dictionary<string, string> extensionsSeen = new(StringComparer.Ordinal);
+    private Dictionary<string, DateTime> extensionsSeenAt = new(StringComparer.Ordinal);
     private bool askBeforeDownload = true;
     private bool speedLimitEnabled;
     private int speedLimitKb = 1024;
@@ -81,11 +82,33 @@ public sealed class AppSettings : INotifyPropertyChanged
     /// that is installed but quiet right now (its browser closed, no page open yet) from one that was never loaded.
     public Dictionary<string, string> ExtensionsSeen { get => extensionsSeen; set => Set(ref extensionsSeen, value ?? new(StringComparer.Ordinal)); }
 
-    /// Written only when the version differs from the one stored (every bridge request calls this).
-    public void NoteExtensionSeen(string browser, string version)
+    /// When each browser's extension last spoke (UTC, to the day): one that has been silent for ExtensionForgetAfter
+    /// (removed, or its browser uninstalled) no longer shows as installed.
+    public Dictionary<string, DateTime> ExtensionsSeenAt { get => extensionsSeenAt; set => Set(ref extensionsSeenAt, value ?? new(StringComparer.Ordinal)); }
+
+    public static readonly TimeSpan ExtensionForgetAfter = TimeSpan.FromDays(30);
+
+    /// Written only when the version differs from the one stored or the stored day is over (every bridge request calls this).
+    public void NoteExtensionSeen(string browser, string version, DateTime? nowUtc = null)
     {
-        if (extensionsSeen.TryGetValue(browser, out var known) && known == version) return;
+        var now = nowUtc ?? DateTime.UtcNow;
+        var fresh = extensionsSeenAt.TryGetValue(browser, out var at) && now - at < TimeSpan.FromDays(1);
+        if (extensionsSeen.TryGetValue(browser, out var known) && known == version && fresh) return;
+        extensionsSeenAt = new Dictionary<string, DateTime>(extensionsSeenAt, StringComparer.Ordinal) { [browser] = now };
         ExtensionsSeen = new Dictionary<string, string>(extensionsSeen, StringComparer.Ordinal) { [browser] = version };
+    }
+
+    /// The version this browser's extension last reported, or null when it never spoke or has been silent for
+    /// ExtensionForgetAfter. An entry from 2.2.1 (no date yet) starts its 30 days now.
+    public string? SeenExtension(string browser, DateTime nowUtc)
+    {
+        if (!extensionsSeen.TryGetValue(browser, out var version)) return null;
+        if (!extensionsSeenAt.TryGetValue(browser, out var at))
+        {
+            ExtensionsSeenAt = new Dictionary<string, DateTime>(extensionsSeenAt, StringComparer.Ordinal) { [browser] = nowUtc };
+            return version;
+        }
+        return nowUtc - at < ExtensionForgetAfter ? version : null;
     }
 
     /// Servers that accepted fewer connections than asked for, by site key (Sites.Key): the next download from there starts with that many.

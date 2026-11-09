@@ -1,6 +1,6 @@
 ﻿; Inno Setup 6 script for the Windows installer (MC-Download-Manager-<version>-Setup.exe).
 ; Built by scripts\build.ps1 when ISCC.exe is available:
-;   ISCC /DAppVersion=2.2.1 "/DStage=<...>\build\MC Download Manager" "/DOut=<...>\build" installer.iss
+;   ISCC /DAppVersion=2.2.2 "/DStage=<...>\build\MC Download Manager" "/DOut=<...>\build" installer.iss
 ; Keep the UTF-8 BOM: the Turkish messages below need it.
 ;
 ; Per-user install (no administrator rights, no UAC prompt) into %LOCALAPPDATA%\Programs\MC Download Manager,
@@ -57,8 +57,8 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "tr"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [CustomMessages]
-en.RemoveData=Also delete your settings, the download list and the downloaded helper tools (yt-dlp, deno)?%n%nThe files you downloaded are not touched.
-tr.RemoveData=Ayarlarınız, indirme listeniz ve indirilen yardımcı araçlar (yt-dlp, deno) da silinsin mi?%n%nİndirdiğiniz dosyalara dokunulmaz.
+en.RemoveData=Also delete your settings, the download list and the downloaded helper tools (yt-dlp, ffmpeg, deno)?%n%nThe files you downloaded are not touched.
+tr.RemoveData=Ayarlarınız, indirme listeniz ve indirilen yardımcı araçlar (yt-dlp, ffmpeg, deno) da silinsin mi?%n%nİndirdiğiniz dosyalara dokunulmaz.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

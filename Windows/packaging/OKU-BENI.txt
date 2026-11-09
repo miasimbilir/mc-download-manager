@@ -7,7 +7,7 @@ Kurucuyla (Setup.exe) kurduysanız yapacak bir şey yok: uygulama Başlat menüs
 
 Zip'ten açtıysanız:
 1. Bu klasörü kalıcı bir yere taşıyın (örneğin Belgeler ya da C:\Programlar). Klasördeki
-   dosyalar birlikte durmalı: MCDownloadManager.exe, tools, ChromeExtension, FirefoxExtension.xpi.
+   dosyalar birlikte durmalı: MCDownloadManager.exe, ChromeExtension, FirefoxExtension.xpi.
 2. MCDownloadManager.exe dosyasına çift tıklayın.
    Windows "Bilgisayarınızı korudu" uyarısı gösterirse: "Ek bilgi" > "Yine de çalıştır".
    (Uygulama imzalı değil; kaynak kodu açık.)
@@ -60,4 +60,5 @@ Ayarlar ve liste %APPDATA%\MC Download Manager klasöründedir.
 
 Windows sürümü: https://github.com/miasimbilir/mc-download-manager
 Özgün macOS uygulaması: Mesut Çevik — https://github.com/mstcvk/mc-download-manager (MIT)
-Gömülü araçlar: yt-dlp (Unlicense), FFmpeg (GPL, tools\ffmpeg-LICENSE.txt)
+Video araçları programla gelmez: yt-dlp (Unlicense) ve FFmpeg (GPL) ilk video indirmesinde, sorulduktan sonra
+resmî GitHub sayfalarından %APPDATA%\MC Download Manager\bin klasörüne indirilir.

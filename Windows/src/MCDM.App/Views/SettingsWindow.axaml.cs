@@ -281,7 +281,7 @@ public partial class SettingsWindow : Window
             var outdated = connected && app.Server.IsExtensionOutdated(b.Id);
             var prepared = !b.Firefox && BrowserIntegration.FilesPrepared(b);
             // Talked to the bridge before (in this or an earlier session): installed, only quiet right now.
-            var seen = !connected && settings.ExtensionsSeen.TryGetValue(b.Id, out var last) ? last : null;
+            var seen = connected ? null : settings.SeenExtension(b.Id, DateTime.UtcNow);
             row.Text.Text = outdated ? (b.Firefox ? Loc.T("Old version — add it again with the setup wizard") : Loc.T("Old version — click “Reload” on the extensions page"))
                 : connected ? (app.Server.ExtensionVersion(b.Id) is { Length: > 0 } v ? Loc.T("Connected ({0})", v) : Loc.T("Connected"))
                 : seen != null ? (seen.Length > 0 ? Loc.T("Installed ({0}) — connects when the browser is open", seen) : Loc.T("Installed — connects when the browser is open"))
@@ -322,6 +322,11 @@ public partial class SettingsWindow : Window
         InstallDeno.Click += async (_, _) =>
         {
             await ToolInstaller.Shared.InstallDenoAsync();
+            ToolInstaller.Shared.RefreshVersions(settings.YtdlpPath);
+        };
+        InstallFfmpeg.Click += async (_, _) =>
+        {
+            await ToolInstaller.Shared.InstallFfmpegAsync();
             ToolInstaller.Shared.RefreshVersions(settings.YtdlpPath);
         };
         ChooseYtDlp.Click += async (_, _) =>
@@ -390,7 +395,13 @@ public partial class SettingsWindow : Window
         InstallDeno.IsEnabled = !installer.Busy;
 
         var ffmpeg = VideoDownloader.LocateFfmpeg();
-        FfmpegText.Text = ffmpeg != null ? Loc.T("ffmpeg: {0}", ffmpeg) : Loc.T("ffmpeg not found (merging video and audio will not work)");
-        FfmpegText.Classes.Set("error", ffmpeg == null);
+        FfmpegTitle.Text = ffmpeg == null ? Loc.T("ffmpeg not installed (joins the picture and the sound)") : installer.FfmpegVersion ?? "ffmpeg";
+        if (ffmpeg == null) FfmpegTitle[!TextBlock.ForegroundProperty] = new DynamicResourceExtension("WarnBrush");
+        else FfmpegTitle.ClearValue(TextBlock.ForegroundProperty);
+        FfmpegText.Text = ffmpeg ?? "";
+        FfmpegText.IsVisible = ffmpeg != null;
+        ToolTip.SetTip(FfmpegText, ffmpeg);
+        InstallFfmpeg.Content = ffmpeg == null ? Loc.T("Install ffmpeg") : Loc.T("Update ffmpeg");
+        InstallFfmpeg.IsEnabled = !installer.Busy && OperatingSystem.IsWindows();
     }
 }

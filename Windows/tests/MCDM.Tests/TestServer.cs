@@ -20,6 +20,9 @@ public sealed class TestServer : IDisposable
     public int DropFirst;               // /flaky: cut this many range responses short
     public int BusyFirst;               // /busy: answer this many part requests with 503 (an overloaded server)
     public int ChunkDelayMs;            // /slow: pause between chunks
+    public long SlowStart = -1;         // /one-slow: the part request starting here trickles (once), the others do not
+    public int SlowOnce = 1;
+    public int SlowChunkDelayMs;
     private int concurrent;
     public int PeakConcurrent;
     public int Throttled;
@@ -194,6 +197,7 @@ public sealed class TestServer : IDisposable
             if (head) return true;
 
             var length = end - start + 1;
+            var trickle = route == "/one-slow" && range != null && start == SlowStart && Interlocked.Decrement(ref SlowOnce) >= 0;
             var cut = route == "/flaky" && length > 1 && Interlocked.Decrement(ref DropFirst) >= 0 ? length / 2 : -1;
             const int chunk = 64 * 1024;
             for (long sent = 0; sent < length;)
@@ -202,7 +206,8 @@ public sealed class TestServer : IDisposable
                 var n = (int)Math.Min(chunk, length - sent);
                 await s.WriteAsync(data.AsMemory((int)(start + sent), n));
                 sent += n;
-                if (ChunkDelayMs > 0 && (route is "/slow" or "/throttle" or "/etag" || (route == "/slow-start" && start == 0))) await Task.Delay(ChunkDelayMs);
+                if (trickle) await Task.Delay(SlowChunkDelayMs);
+                else if (ChunkDelayMs > 0 && (route is "/slow" or "/throttle" or "/etag" or "/one-slow" || (route == "/slow-start" && start == 0))) await Task.Delay(ChunkDelayMs);
             }
             return true;
         }

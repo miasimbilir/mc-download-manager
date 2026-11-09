@@ -10,17 +10,14 @@ NAME="MC Download Manager"
 OUT="$WIN/build"
 STAGE="$OUT/$NAME"
 
-[[ -f "$WIN/Tools/yt-dlp.exe" && -f "$WIN/Tools/ffmpeg.exe" ]] || "$WIN/scripts/fetch-tools.sh"
-
 rm -rf "$OUT/publish" "$STAGE"
 dotnet publish "$WIN/src/MCDM.App/MCDM.App.csproj" -c Release -r "$RID" --self-contained true \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:DebugSymbols=false \
   -o "$OUT/publish" -nologo -v q
 
-mkdir -p "$STAGE/tools"
+# yt-dlp and ffmpeg are not packed (since 2.2.2): the app downloads them for the first video.
+mkdir -p "$STAGE"
 cp "$OUT/publish/MCDownloadManager.exe" "$STAGE/"
-cp "$WIN/Tools/yt-dlp.exe" "$WIN/Tools/ffmpeg.exe" "$STAGE/tools/"
-cp "$WIN/Tools/ffmpeg-LICENSE.txt" "$STAGE/tools/" 2>/dev/null || true
 # The same unpacked extension the macOS app ships for Chrome
 cp -R "$ROOT/Extension" "$STAGE/ChromeExtension"
 find "$STAGE/ChromeExtension" -name .DS_Store -delete

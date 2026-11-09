@@ -56,8 +56,9 @@ public interface IStoreUi
     /// The download left the app (handed to the browser): its window goes too.
     void CloseDetail(Guid id) { }
     void NotifyCompleted(DownloadItem item);
-    /// Asks once whether to install deno. Returns (install, don't ask again).
-    Task<(bool Install, bool DontAskAgain)> AskInstallDenoAsync();
+    /// Asks once whether to download the tools a video needs ("yt-dlp", "ffmpeg", "deno"). Returns (install, don't ask
+    /// again); the latter only counts when deno is all that is asked for.
+    Task<(bool Install, bool DontAskAgain)> AskInstallToolsAsync(IReadOnlyList<string> tools);
     /// Lets the user pick a resolution (or audio only) for a video. null = the user cancelled the download.
     Task<VideoFormatAnswer?> AskVideoFormatAsync(DownloadItem item, VideoInfo info);
     /// Shows a file the browser handed over (its size and the server's name for it arrive on the item a
@@ -78,7 +79,7 @@ public sealed class NoUi : IStoreUi
     public void ShowDetail(Guid id) { }
     public void DetailCompleted(Guid id, bool autoClose) { }
     public void NotifyCompleted(DownloadItem item) { }
-    public Task<(bool Install, bool DontAskAgain)> AskInstallDenoAsync() => Task.FromResult((false, false));
+    public Task<(bool Install, bool DontAskAgain)> AskInstallToolsAsync(IReadOnlyList<string> tools) => Task.FromResult((false, false));
     public Task<VideoFormatAnswer?> AskVideoFormatAsync(DownloadItem item, VideoInfo info) => Task.FromResult<VideoFormatAnswer?>(VideoFormatAnswer.Default);
 }
 
@@ -96,10 +97,15 @@ public sealed class DownloadStore
     private readonly Dictionary<Guid, Process> videoProcesses = [];
     /// yt-dlp downloads several files (video, audio): bytes completed in earlier phases + approx total.
     private readonly Dictionary<Guid, (long Base, long LastDownloaded, long ApproxTotal)> videoPhase = [];
-    /// YouTube downloads waiting for the deno install prompt / install to finish.
-    private readonly List<Guid> denoWaiters = [];
-    private bool denoPrompting;
+    /// Video downloads waiting for the tools question and the installs to finish.
+    private readonly List<Guid> toolWaiters = [];
+    private bool toolPrompting;
     private bool denoDeclinedThisLaunch;
+    /// The tools each video has already been asked about: refused or failed ones are not asked again for it (it goes on
+    /// without them, and fails with the reason when yt-dlp is missing) until the user resumes it. A new video asks again.
+    private readonly Dictionary<Guid, HashSet<string>> toolsAsked = [];
+    /// Why a tool could not be installed, kept for the video's log (StartVideo clears the log).
+    private readonly Dictionary<Guid, string> toolNotes = [];
     /// Video downloads that are retried without cookies after YouTube rejected the signed-in client.
     private readonly HashSet<Guid> cookielessVideos = [];
     /// Videos whose formats are being listed, or whose quality question is on screen.
@@ -642,6 +648,23 @@ public sealed class DownloadStore
     private void StartVideo(DownloadItem item)
     {
         var id = item.Id;
+        // Tools a video needs and does not have yet (none comes with the app): asked for once, for all the downloads
+        // waiting, and the downloads go on when they are in.
+        if (MissingTools(item).Count > 0)
+        {
+            Update(id, i =>
+            {
+                i.State = DownloadState.downloading; i.ErrorMessage = null; i.Speed = 0;
+                i.Stage = Loc.T("Waiting for the video tools…");
+            });
+            if (!toolWaiters.Contains(id)) toolWaiters.Add(id);
+            if (!toolPrompting)
+            {
+                toolPrompting = true;
+                MainThread.Post(PromptForTools);
+            }
+            return;
+        }
         var exe = VideoDownloader.LocateYtDlp(Settings.YtdlpPath);
         if (exe == null)
         {
@@ -651,22 +674,6 @@ public sealed class DownloadStore
                 i.ErrorMessage = Loc.T("yt-dlp not found. Use “Install yt-dlp” in Settings ▸ Video.");
             });
             MainThread.Post(() => { PumpQueue(); QueueMayHaveEnded(); });
-            return;
-        }
-        if (VideoDownloader.IsYouTube(item.Uri) && VideoDownloader.LocateDeno() == null
-            && !Settings.DenoPromptSuppressed && !denoDeclinedThisLaunch)
-        {
-            Update(id, i =>
-            {
-                i.State = DownloadState.downloading; i.ErrorMessage = null; i.Speed = 0;
-                i.Stage = Loc.T("Waiting for the JavaScript runtime (deno)…");
-            });
-            if (!denoWaiters.Contains(id)) denoWaiters.Add(id);
-            if (!denoPrompting)
-            {
-                denoPrompting = true;
-                MainThread.Post(PromptForDeno);
-            }
             return;
         }
         if (item.FormatArgs == null && Settings.AskVideoQuality && Settings.VideoFormat.Trim().Length == 0 && !formatDecided.Contains(id))
@@ -684,7 +691,8 @@ public sealed class DownloadStore
             i.Playlist = playlist;
             i.Note = null;
             i.WorkingPath = null;
-            if (useCookies) i.Log = "";     // keep the failed attempt's output visible above the retry
+            if (useCookies) i.Log = toolNotes.GetValueOrDefault(id, "");     // keep the failed attempt's output visible above the retry
+
         });
         var outDir = DestinationDirectory(item);
         try { Directory.CreateDirectory(outDir); } catch { }
@@ -959,40 +967,87 @@ public sealed class DownloadStore
         RaiseChanged();
     }
 
-    /// Asks once whether to install deno, which yt-dlp needs for YouTube, then starts the waiting downloads.
-    private async void PromptForDeno()
+    /// yt-dlp and ffmpeg for every video, deno for YouTube (yt-dlp needs it to unlock the streams) unless the user said no.
+    private List<string> MissingTools(DownloadItem item)
     {
+        var tools = new List<string>();
+        if (VideoDownloader.LocateYtDlp(Settings.YtdlpPath) == null) tools.Add("yt-dlp");
+        if (VideoDownloader.LocateFfmpeg() == null) tools.Add("ffmpeg");
+        if (VideoDownloader.IsYouTube(item.Uri) && VideoDownloader.LocateDeno() == null
+            && !Settings.DenoPromptSuppressed && !denoDeclinedThisLaunch)
+            tools.Add("deno");
+        if (toolsAsked.TryGetValue(item.Id, out var asked)) tools.RemoveAll(asked.Contains);
+        return tools;
+    }
+
+    private bool IsPresent(string tool) => tool switch
+    {
+        "yt-dlp" => VideoDownloader.LocateYtDlp(Settings.YtdlpPath) != null,
+        "ffmpeg" => VideoDownloader.LocateFfmpeg() != null,
+        _ => VideoDownloader.LocateDeno() != null,
+    };
+
+    /// Asks once whether to download the tools the waiting videos need, installs them one after another, then starts
+    /// the waiting downloads.
+    private async void PromptForTools()
+    {
+        string[] order = ["yt-dlp", "ffmpeg", "deno"];
+        var tools = toolWaiters.Select(Find).OfType<DownloadItem>().SelectMany(MissingTools).Distinct()
+            .OrderBy(t => Array.IndexOf(order, t)).ToList();
         try
         {
-            var (install, dontAsk) = await Ui.AskInstallDenoAsync();
-            if (dontAsk) Settings.DenoPromptSuppressed = true;
+            if (tools.Count == 0) { ResumeToolWaiters(tools); return; }
+            var (install, dontAsk) = await Ui.AskInstallToolsAsync(tools);
+            if (dontAsk && tools is ["deno"]) Settings.DenoPromptSuppressed = true;
             if (!install)
             {
-                denoDeclinedThisLaunch = true;
-                ResumeDenoWaiters();
+                // Only the deno-only question counts as "no deno for this launch". "Not Now" on the question that also
+                // offers yt-dlp/ffmpeg says nothing about deno, and the next video's question (which comes again) has
+                // to offer it again, or a YouTube video goes ahead without it (Victus, round 8).
+                if (tools is ["deno"]) denoDeclinedThisLaunch = true;
+                ResumeToolWaiters(tools);
                 return;
             }
-            foreach (var id in denoWaiters) Update(id, i => i.Stage = Loc.T("Installing deno…"));
-            var (_, error) = await ToolInstaller.Shared.InstallDenoAsync();
-            if (error != null)
+            foreach (var tool in tools)
             {
-                denoDeclinedThisLaunch = true;   // don't loop on a failing install; Settings ▸ Video can retry
-                foreach (var id in denoWaiters)
-                    Update(id, i => i.Log += Loc.T("deno could not be installed: {0}", error.Message) + "\n");
+                foreach (var id in toolWaiters) Update(id, i => i.Stage = Loc.T("Installing {0}…", tool));
+                // An install started from Settings ▸ Video is waited for, not counted as a failure.
+                while (ToolInstaller.Shared.Busy) await Task.Delay(500);
+                // That install (or one before it in this loop) may have brought this tool in: don't download it twice
+                // (Victus, round 8: ffmpeg from Settings, then the same ~86 MB again for the video waiting on it).
+                if (IsPresent(tool)) continue;
+                var (_, error) = tool switch
+                {
+                    "yt-dlp" => await ToolInstaller.Shared.InstallOrUpdateYtDlpAsync(),
+                    "ffmpeg" => await ToolInstaller.Shared.InstallFfmpegAsync(),
+                    _ => await ToolInstaller.Shared.InstallDenoAsync(),
+                };
+                if (error == null) continue;
+                // Don't loop on a failing install (the videos are not asked again); Settings ▸ Video can retry.
+                if (tool == "deno") denoDeclinedThisLaunch = true;
+                var line = Loc.T("{0} could not be installed: {1}", tool, error.Message) + "\n";
+                foreach (var id in toolWaiters) toolNotes[id] = toolNotes.GetValueOrDefault(id, "") + line;
             }
         }
         catch
         {
             denoDeclinedThisLaunch = true;
         }
-        ResumeDenoWaiters();
+        ResumeToolWaiters(tools);
     }
 
-    private void ResumeDenoWaiters()
+    /// `asked`: what the question offered. It counts as answered for the waiting videos and for those queued behind
+    /// them (added before the answer), so none of them asks the same again.
+    private void ResumeToolWaiters(List<string> asked)
     {
-        denoPrompting = false;
-        var waiting = denoWaiters.ToList();
-        denoWaiters.Clear();
+        toolPrompting = false;
+        var waiting = toolWaiters.ToList();
+        toolWaiters.Clear();
+        foreach (var item in Items.Where(i => i.Kind == DownloadKind.video && (i.State == DownloadState.queued || waiting.Contains(i.Id))))
+        {
+            if (!toolsAsked.TryGetValue(item.Id, out var set)) toolsAsked[item.Id] = set = [];
+            set.UnionWith(asked);
+        }
         foreach (var id in waiting)
         {
             var item = Find(id);
@@ -1009,7 +1064,7 @@ public sealed class DownloadStore
         Update(id, i => { i.State = DownloadState.paused; i.Speed = 0; });
         if (downloaders.TryGetValue(id, out var dl)) dl.Stop();
         if (videoProcesses.Remove(id, out var p)) VideoDownloader.Kill(p);
-        denoWaiters.Remove(id);
+        toolWaiters.Remove(id);
         StopFormatQuestion(id);
         StopConfirmation(id);
         ScheduleSave();
@@ -1024,6 +1079,8 @@ public sealed class DownloadStore
         Update(id, i => { i.State = DownloadState.queued; i.ErrorMessage = null; i.LastHttpStatus = null; });
         cookielessVideos.Remove(id);
         formatDecided.Remove(id);       // a video without a stored choice is asked about again
+        toolsAsked.Remove(id);          // and about the tools it still lacks
+        toolNotes.Remove(id);
         PumpQueue();
         RaiseChanged();
     }
@@ -1034,7 +1091,7 @@ public sealed class DownloadStore
         if (item == null || item.State == DownloadState.completed) return;
         if (downloaders.Remove(id, out var dl)) dl.Stop();
         if (videoProcesses.Remove(id, out var p)) VideoDownloader.Kill(p);
-        denoWaiters.Remove(id);
+        toolWaiters.Remove(id);
         StopFormatQuestion(id);
         StopConfirmation(id);
         TryDelete(item.PartPath);
@@ -1063,7 +1120,9 @@ public sealed class DownloadStore
         }
         if (downloaders.Remove(id, out var dl)) dl.Stop();
         if (videoProcesses.Remove(id, out var p)) VideoDownloader.Kill(p);
-        denoWaiters.Remove(id);
+        toolWaiters.Remove(id);
+        toolsAsked.Remove(id);
+        toolNotes.Remove(id);
         StopFormatQuestion(id);
         StopConfirmation(id);
         playlistPosition.Remove(id);

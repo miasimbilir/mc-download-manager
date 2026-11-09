@@ -62,6 +62,41 @@ public class MiscTests
     }
 
     [Fact]
+    public void An_extension_silent_for_30_days_is_forgotten_and_a_daily_visit_is_written_once_a_day()
+    {
+        var file = Path.Combine(Setup.TempDir(), "settings.json");
+        var s = AppSettings.Load(file);
+        var day = new DateTime(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
+        s.NoteExtensionSeen("brave", "1.4.1", day);
+        var before = s.ExtensionsSeen;
+        s.NoteExtensionSeen("brave", "1.4.1", day.AddHours(5));
+        Assert.Same(before, s.ExtensionsSeen);                              // same day: nothing written
+        s.NoteExtensionSeen("brave", "1.4.1", day.AddDays(2));
+        Assert.Equal(day.AddDays(2), AppSettings.Load(file).ExtensionsSeenAt["brave"]);
+        Assert.Equal("1.4.1", s.SeenExtension("brave", day.AddDays(31)));
+        Assert.Null(s.SeenExtension("brave", day.AddDays(33)));
+        Assert.Null(s.SeenExtension("chrome", day));
+
+        // A 2.2.1 settings file has versions but no dates: they count from the first look.
+        s.ExtensionsSeen = new() { ["edge"] = "1.4.0" };
+        Assert.Equal("1.4.0", s.SeenExtension("edge", day));
+        Assert.Equal("1.4.0", s.SeenExtension("edge", day.AddDays(29)));
+        Assert.Null(s.SeenExtension("edge", day.AddDays(30)));
+    }
+
+    [Theory]
+    [InlineData("https://example.com/100%.zip")]
+    [InlineData("https://example.com/dosya%2.zip")]
+    [InlineData("https://example.com/a%zz")]
+    [InlineData("https://drive.google.com/uc?id=abc&resourcekey=%zz")]
+    public void A_stray_percent_sign_in_an_address_does_not_throw(string url)
+    {
+        var uri = new Uri(url);
+        Assert.NotEmpty(FileNames.FromUrl(uri));
+        Sites.DriveDownloadUrl(uri);
+    }
+
+    [Fact]
     public void Long_names_are_cut_but_keep_their_extension()
     {
         var n = FileNames.Sanitize(new string('a', 400) + ".mkv");
@@ -201,7 +236,11 @@ public class MiscTests
         Assert.True(jar.AppliesTo("accounts.google.com"));
         Assert.False(jar.AppliesTo("vimeo.com"));
         Assert.False(jar.AppliesTo("notyoutube.com"));
-        Assert.Equal(SiteCookies.FilePath, VideoDownloader.MergedCookieFile(null, "m.youtube.com"));
+        // A copy of its own for each yt-dlp run (yt-dlp writes its cookie file back), never the jar itself.
+        var copy = VideoDownloader.MergedCookieFile(null, "m.youtube.com")!;
+        Assert.NotEqual(SiteCookies.FilePath, copy);
+        Assert.Equal(File.ReadAllText(SiteCookies.FilePath) + "\n", File.ReadAllText(copy));
+        File.Delete(copy);
         Assert.Null(VideoDownloader.MergedCookieFile(null, "vimeo.com"));
         jar.Clear();
         Assert.Equal(0, jar.CookieCount);

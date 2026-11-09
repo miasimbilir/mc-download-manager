@@ -1,3 +1,6 @@
+using System.Net;
+using System.Text.RegularExpressions;
+
 namespace MCDM;
 
 /// Sites whose downloads stay in the browser: the same keys and matching as the extension (`siteKey`, `hostListed`).
@@ -142,5 +145,74 @@ public static class Sites
         }
 
         return url;
+    }
+    // ---- Google Drive ----
+
+    /// One of Google Drive's own https hosts (the share page, old Docs links, the file server).
+    public static bool IsDriveHost(Uri url) => url.Scheme == "https" && IsDriveHostName(url);
+
+    private static bool IsDriveHostName(Uri url) =>
+        (url.Host.Equals("drive.google.com", StringComparison.OrdinalIgnoreCase)
+        || url.Host.Equals("docs.google.com", StringComparison.OrdinalIgnoreCase)
+        || url.Host.Equals("drive.usercontent.google.com", StringComparison.OrdinalIgnoreCase));
+
+    /// A Google Drive file link (the page a share link opens, "open?id=", "uc?id=", or the file server's own address) as
+    /// the address that serves the file; null for any other link, Docs and Sheets documents among them.
+    public static Uri? DriveDownloadUrl(Uri url)
+    {
+        if (!IsDriveHostName(url) || url.Scheme is not ("http" or "https")) return null;
+        var path = url.AbsolutePath;
+        string? id = null;
+        var m = Regex.Match(path, "^/file/(?:u/\\d+/)?d/([A-Za-z0-9_-]+)");
+        if (m.Success) id = m.Groups[1].Value;
+        else if (path is "/uc" or "/open" or "/download") id = QueryValue(url, "id");
+        if (id == null || !Regex.IsMatch(id, "^[A-Za-z0-9_-]+$")) return null;
+        // The file server's own address, already carrying the "download anyway" answer: as it is.
+        if (url.Host.Equals("drive.usercontent.google.com", StringComparison.OrdinalIgnoreCase) && QueryValue(url, "confirm") != null) return url;
+        // Files shared before 2021 need their resource key as well.
+        var key = QueryValue(url, "resourcekey") is { Length: > 0 } k ? "&resourcekey=" + Uri.EscapeDataString(k) : "";
+        return new Uri($"https://drive.usercontent.google.com/download?id={id}&export=download{key}");
+    }
+
+    /// Google Drive's "can't scan this file for viruses" page: the address its "Download anyway" button leads to (the
+    /// download form with its hidden fields; older pages link it directly). null when the page has neither: the file
+    /// is private, deleted or over its download limit.
+    public static Uri? DriveConfirmUrl(string html, Uri page)
+    {
+        var form = Regex.Match(html,
+            "<form[^>]*id=\"download-form\"[^>]*>(.*?)</form>",
+            RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        if (form.Success)
+        {
+            var action = Regex.Match(form.Value, "action=\"([^\"]*)\"", RegexOptions.IgnoreCase);
+            if (!action.Success || !Uri.TryCreate(page, WebUtility.HtmlDecode(action.Groups[1].Value), out var target)) return null;
+            var fields = new List<string>();
+            foreach (Match input in Regex.Matches(form.Groups[1].Value, "<input[^>]*>", RegexOptions.IgnoreCase))
+            {
+                if (!input.Value.Contains("type=\"hidden\"", StringComparison.OrdinalIgnoreCase)) continue;
+                var name = Regex.Match(input.Value, "name=\"([^\"]*)\"");
+                var value = Regex.Match(input.Value, "value=\"([^\"]*)\"");
+                if (!name.Success) continue;
+                fields.Add(Uri.EscapeDataString(WebUtility.HtmlDecode(name.Groups[1].Value)) + "="
+                    + Uri.EscapeDataString(WebUtility.HtmlDecode(value.Success ? value.Groups[1].Value : "")));
+            }
+            if (fields.Count == 0) return null;
+            var builder = new UriBuilder(target) { Query = string.Join("&", fields) };
+            return IsDriveHost(builder.Uri) ? builder.Uri : null;
+        }
+        var link = Regex.Match(html, "href=\"([^\"]*[?&](?:amp;)?confirm=[^\"]*)\"", RegexOptions.IgnoreCase);
+        if (link.Success && Uri.TryCreate(page, WebUtility.HtmlDecode(link.Groups[1].Value), out var direct) && IsDriveHost(direct)) return direct;
+        return null;
+    }
+
+    private static string? QueryValue(Uri url, string key)
+    {
+        foreach (var pair in url.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=');
+            var k = eq < 0 ? pair : pair[..eq];
+            if (k.Equals(key, StringComparison.Ordinal)) return eq < 0 ? "" : Uri.UnescapeDataString(pair[(eq + 1)..]);
+        }
+        return null;
     }
 }

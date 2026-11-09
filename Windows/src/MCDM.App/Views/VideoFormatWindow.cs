@@ -147,7 +147,13 @@ public sealed class VideoFormatWindow : Window
     {
         var w = new VideoFormatWindow(store, item, info);
         var closed = new TaskCompletionSource();
-        w.Closed += (_, _) => closed.TrySetResult();
+        // Paused, cancelled or removed meanwhile (main window, tray): the question no longer applies.
+        void OnStoreChanged()
+        {
+            if (store.Find(item.Id) is not { State: DownloadState.downloading }) w.Close();
+        }
+        store.Changed += OnStoreChanged;
+        w.Closed += (_, _) => { store.Changed -= OnStoreChanged; closed.TrySetResult(); };
         // The request usually comes from the browser, so the question has to come to the front on its own.
         w.Topmost = true;
         w.Show();

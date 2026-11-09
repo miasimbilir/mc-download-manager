@@ -27,6 +27,8 @@ public sealed class SegmentedDownloader
         /// Validators from the run the parts on disk came from (ProbeResult.ETag / LastModified).
         public string? ResumeETag { get; init; }
         public string? ResumeLastModified { get; init; }
+        /// How long a connection's speed is measured before it may be judged slow and replaced.
+        public TimeSpan SlowWindow { get; init; } = TimeSpan.FromSeconds(6);
     }
 
     /// All three are raised on thread-pool threads.
@@ -66,6 +68,9 @@ public sealed class SegmentedDownloader
     private int transferring, peakTransferring;     // connections receiving data now / at most at once
     private int restarts;
     private const int MaxRestarts = 2;
+    /// A connection this many times slower than the others is dropped and its part fetched again on a new one.
+    private const double SlowFactor = 8;
+    private const int MaxReplacementsPerPart = 2;
 
     public SegmentedDownloader(Configuration configuration)
     {
@@ -105,6 +110,7 @@ public sealed class SegmentedDownloader
         try
         {
             var ct = stopCts.Token;
+            await ResolveDriveAsync(ct).ConfigureAwait(false);
             var canResume = config.ResumeTotal > 0 && config.ResumeSegments.Count > 0 && File.Exists(config.PartPath);
             if (canResume)
             {
@@ -198,11 +204,13 @@ public sealed class SegmentedDownloader
     private static readonly HashSet<string> credentialHeaders = new(StringComparer.OrdinalIgnoreCase) { "Cookie", "Authorization", "Proxy-Authorization" };
 
     /// Credentials (Cookie/Authorization) are only sent to the host the download was requested for,
-    /// never to a host reached through a redirect.
+    /// never to a host reached through a redirect. Google Drive's hosts count as one: a share link is fetched from its
+    /// file server (ResolveDriveAsync), where the browser sends the same Google cookies.
     private bool SameOrigin(Uri url) =>
         string.Equals(url.Host, config.Url.Host, StringComparison.OrdinalIgnoreCase)
         && string.Equals(url.Scheme, config.Url.Scheme, StringComparison.OrdinalIgnoreCase)
-        && url.Port == config.Url.Port;
+        && url.Port == config.Url.Port
+        || Sites.IsDriveHost(url) && Sites.IsDriveHost(config.Url) && url.IsDefaultPort && config.Url.IsDefaultPort;
 
     private HttpRequestMessage MakeRequest(Uri url, string? range, string? ifRange, HttpMethod method)
     {
@@ -269,6 +277,7 @@ public sealed class SegmentedDownloader
         var dl = new SegmentedDownloader(new Configuration { Url = url, Headers = headers, PartPath = "" });
         try
         {
+            await dl.ResolveDriveAsync(ct).ConfigureAwait(false);
             try
             {
                 if (await dl.HeadAsync(ct).ConfigureAwait(false) is { TotalBytes: > 0 } head) return head;
@@ -322,6 +331,44 @@ public sealed class SegmentedDownloader
             var ctype = Header(resp, "Content-Type")?.Split(';')[0].Trim();
             return new ProbeResult(total, ranges, name, ctype, finalUrl, Header(resp, "ETag"), Header(resp, "Last-Modified"));
         }
+    }
+
+    /// Google Drive: a share link opens a page, and a big file a "can't scan this file for viruses" page, instead of
+    /// the file. The request goes to the file server, and through that page's "Download anyway" when it comes. Each
+    /// run asks again, since the page's answer does not keep.
+    private async Task ResolveDriveAsync(CancellationToken ct)
+    {
+        if (Sites.DriveDownloadUrl(requestUrl) is not { } direct) return;
+        requestUrl = direct;
+        var (resp, finalUrl) = await SendAsync("bytes=0-0", ct).ConfigureAwait(false);
+        using (resp)
+        {
+            // The file itself (a part of it, or one sent as an attachment) may be a web page too: only a whole-page
+            // answer is Drive's own page.
+            if ((int)resp.StatusCode != 200 || !IsWebPage(resp)
+                || Header(resp, "Content-Disposition")?.Contains("attachment", StringComparison.OrdinalIgnoreCase) == true) return;
+            var html = await ReadTextAsync(resp, 512 * 1024, ct).ConfigureAwait(false);
+            requestUrl = Sites.DriveConfirmUrl(html, finalUrl)
+                ?? throw new DownloadFailure(Loc.T("Google Drive did not give the file: it may be private, deleted, or over its download limit for today"));
+        }
+    }
+
+    private static async Task<string> ReadTextAsync(HttpResponseMessage resp, int limit, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(IdleTimeout);
+        await using var stream = await resp.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+        var buffer = new byte[limit];
+        int total = 0, n;
+        try
+        {
+            while (total < limit && (n = await stream.ReadAsync(buffer.AsMemory(total), timeout.Token).ConfigureAwait(false)) > 0) total += n;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new DownloadFailure(Loc.T("Google Drive did not answer in time"));
+        }
+        return Encoding.UTF8.GetString(buffer, 0, total);
     }
 
     public static SegmentInfo[] MakeSegments(long total, int count)
@@ -475,6 +522,14 @@ public sealed class SegmentedDownloader
         var changed = false;
         var wake = new SemaphoreSlim(0);
         var tasks = new List<Task>();
+        // Slow connections: every connection receiving data is sampled; one far slower than the others is dropped and
+        // its part goes back to the front of the queue for a new connection (often another route or server node).
+        var live = new List<Run>();
+        var finishedSpeeds = new List<(long Tick, double Speed)>();    // whole parts' speeds, for when no other is measured
+        var replacements = new Dictionary<int, int>();
+        var totalReplacements = 0;
+        var window = (long)config.SlowWindow.TotalMilliseconds;
+        var lastCheck = Environment.TickCount64;
 
         void Fatal(Exception e) { fatal ??= e; multi.Cancel(); }
 
@@ -528,17 +583,52 @@ public sealed class SegmentedDownloader
         {
             active++;
             running.Add(index);
-            tasks.Add(Task.Run(() => Segment(index)));
+            var run = new Run(index, CancellationTokenSource.CreateLinkedTokenSource(ct));
+            live.Add(run);
+            tasks.Add(Task.Run(() => Segment(run)));
         }
 
-        async Task Segment(int i)
+        // The connection to drop, if one is far slower than the others measured now (or, near the end, than the parts
+        // that have just finished) and its part would not be done within the next window anyway. One at a time.
+        Run? Slowest(long tick)
         {
+            var measured = new List<(Run Run, double Speed)>();
+            foreach (var run in live)
+            {
+                if (run.Samples is not { } q) continue;
+                q.Enqueue((tick, segments[run.Part].Received));
+                while (q.Count > 1 && tick - q.ElementAt(1).Tick >= window) q.Dequeue();
+                var (t0, r0) = q.Peek();
+                if (tick - t0 >= window) measured.Add((run, (segments[run.Part].Received - r0) * 1000.0 / (tick - t0)));
+            }
+            finishedSpeeds.RemoveAll(f => tick - f.Tick > 5 * window);
+            if (totalReplacements >= Math.Max(4, limit)) return null;
+            foreach (var (run, speed) in measured.OrderBy(m => m.Speed))
+            {
+                var others = measured.Where(m => m.Run != run).Select(m => m.Speed).ToList();
+                if (others.Count == 0) others = [.. finishedSpeeds.Select(f => f.Speed)];
+                if (others.Count == 0 || speed * SlowFactor >= Median(others)) continue;
+                var left = segments[run.Part].Length - segments[run.Part].Received;
+                if (left <= speed * window / 1000 || replacements.GetValueOrDefault(run.Part) >= MaxReplacementsPerPart) continue;
+                replacements[run.Part] = replacements.GetValueOrDefault(run.Part) + 1;
+                totalReplacements++;
+                run.Samples = null;
+                return run;
+            }
+            return null;
+        }
+
+        async Task Segment(Run run)
+        {
+            var i = run.Part;
+            var token = run.Cancel.Token;
+            var requeue = false;
             try
             {
                 string range;
                 lock (gate) range = $"bytes={segments[i].Start + segments[i].Received}-{segments[i].End}";
                 var validator = IfRangeValue();
-                var (resp, _) = await SendAsync(range, ct, validator).ConfigureAwait(false);
+                var (resp, _) = await SendAsync(range, token, validator).ConfigureAwait(false);
                 using (resp)
                 {
                     var status = (int)resp.StatusCode;
@@ -552,6 +642,9 @@ public sealed class SegmentedDownloader
                         {
                             retries[i] = 0;
                             peakTransferring = Math.Max(peakTransferring, ++transferring);
+                            run.StartTick = Environment.TickCount64;
+                            run.StartReceived = segments[i].Received;
+                            run.Samples = new Queue<(long, long)>([(run.StartTick, run.StartReceived)]);
                         }
                         try
                         {
@@ -560,16 +653,31 @@ public sealed class SegmentedDownloader
                                 // A read already under way when the part was split may run past its new end: those bytes
                                 // are the same file, written where they belong, and are not counted twice.
                                 n => { lock (gate) segments[i].Received = Math.Min(segments[i].Length, segments[i].Received + n); },
-                                ct).ConfigureAwait(false);
+                                token).ConfigureAwait(false);
                         }
                         finally
                         {
-                            lock (gate) transferring--;
+                            lock (gate) { transferring--; run.Samples = null; }
                         }
                         lock (gate)
                         {
-                            if (segments[i].IsDone) activeLimit = Math.Min(limit, activeLimit + 1);
+                            if (segments[i].IsDone)
+                            {
+                                activeLimit = Math.Min(limit, activeLimit + 1);
+                                var took = Environment.TickCount64 - run.StartTick;
+                                if (took >= window / 2) finishedSpeeds.Add((Environment.TickCount64, (segments[i].Received - run.StartReceived) * 1000.0 / took));
+                            }
                             else Retry(i, null);
+                        }
+                    }
+                    else if (status == 200 && IsWebPage(resp))
+                    {
+                        lock (gate)
+                        {
+                            // A web page where file parts were expected: an expired link or a login/quota page. Once data
+                            // is on disk, starting over would replace it with that page: stop, so it can be resumed later.
+                            if (resuming || segments.Any(s => s.Received > 0)) Fatal(new DownloadFailure(Loc.T("The server sent a web page instead of the file (the link may have expired). Try again later, or download it again from the browser.")));
+                            else { fallback = true; multi.Cancel(); }
                         }
                     }
                     else if (status == 200)
@@ -602,6 +710,7 @@ public sealed class SegmentedDownloader
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { requeue = true; }    // dropped as slow
             catch (DiskWriteException e)
             {
                 lock (gate) Fatal(new DownloadFailure(e.Message, local: true));
@@ -612,7 +721,14 @@ public sealed class SegmentedDownloader
             }
             finally
             {
-                lock (gate) { active--; running.Remove(i); }
+                lock (gate)
+                {
+                    active--;
+                    running.Remove(i);
+                    live.Remove(run);
+                    if (requeue && !segments[i].IsDone && !pending.Contains(i)) pending.AddFirst(i);
+                }
+                run.Cancel.Dispose();
                 wake.Release();
             }
         }
@@ -620,6 +736,7 @@ public sealed class SegmentedDownloader
         while (true)
         {
             var wait = Timeout.InfiniteTimeSpan;
+            Run? slow = null;
             lock (gate)
             {
                 if (fatal != null || fallback || changed || ct.IsCancellationRequested) break;
@@ -638,7 +755,18 @@ public sealed class SegmentedDownloader
                     wait = throttledUntil - now + TimeSpan.FromMilliseconds(50);
                 }
                 if (active == 0 && pending.Count == 0) break;
+                // A speed limit shares the bandwidth out unevenly between connections: no connection is slow then. Nor
+                // is one dropped while the server asks to slow down (429/503): no new connection could take its place.
+                if (window > 0 && live.Count > 0 && !RateLimiter.Limited && now >= throttledUntil && !limited)
+                {
+                    var tick = Environment.TickCount64;
+                    if (tick - lastCheck >= window / 6) { lastCheck = tick; slow = Slowest(tick); }
+                    var next = TimeSpan.FromMilliseconds(Math.Max(10, lastCheck + window / 6 - tick));
+                    if (wait == Timeout.InfiniteTimeSpan || next < wait) wait = next;
+                }
             }
+            // Outside the lock: cancelling may run the connection's own clean-up on this thread.
+            try { slow?.Cancel.Cancel(); } catch (ObjectDisposedException) { }
             try { await wake.WaitAsync(wait, ct).ConfigureAwait(false); }
             catch (OperationCanceledException) { break; }
         }
@@ -670,6 +798,27 @@ public sealed class SegmentedDownloader
             if (segments.Any(s => !s.IsDone)) throw new DownloadFailure(Loc.T("Segment {0} could not be completed", Array.FindIndex(segments, s => !s.IsDone) + 1));
         }
     }
+
+    /// One connection fetching one part: its own cancellation (to drop it when slow) and, while data comes in, samples
+    /// of its progress (tick, bytes received). Guarded by `gate`.
+    private sealed class Run(int part, CancellationTokenSource cancel)
+    {
+        public int Part { get; } = part;
+        public CancellationTokenSource Cancel { get; } = cancel;
+        public Queue<(long Tick, long Received)>? Samples;
+        public long StartTick, StartReceived;
+    }
+
+    private static double Median(List<double> values)
+    {
+        values.Sort();
+        var mid = values.Count / 2;
+        return values.Count % 2 == 1 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
+    }
+
+    private static bool IsWebPage(HttpResponseMessage resp) =>
+        resp.Content.Headers.ContentType?.MediaType is { } type
+        && (type.Equals("text/html", StringComparison.OrdinalIgnoreCase) || type.Equals("application/xhtml+xml", StringComparison.OrdinalIgnoreCase));
 
     /// Statuses that mean "slow down / try again later" rather than "no".
     internal static bool IsThrottle(int status) => status is 408 or 425 or 429 or 500 or 502 or 503 or 504;

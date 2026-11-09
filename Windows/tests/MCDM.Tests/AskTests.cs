@@ -19,7 +19,7 @@ public class AskTests
         public void ShowDetail(Guid id) => Shown.Add(id);
         public void DetailCompleted(Guid id, bool autoClose) { }
         public void NotifyCompleted(DownloadItem item) { }
-        public Task<(bool Install, bool DontAskAgain)> AskInstallDenoAsync() => Task.FromResult((false, false));
+        public Task<(bool Install, bool DontAskAgain)> AskInstallToolsAsync(IReadOnlyList<string> tools) => Task.FromResult((false, false));
         public Task<VideoFormatAnswer?> AskVideoFormatAsync(DownloadItem item, VideoInfo info) => Task.FromResult<VideoFormatAnswer?>(VideoFormatAnswer.Default);
         public Task<DownloadAnswer> AskDownloadAsync(DownloadItem item) { AskedDownload.Add(item); return Download(item); }
         public Task<DuplicateDecision> AskDuplicateAsync(DownloadItem existing) { AskedDuplicate.Add(existing); return Task.FromResult(Duplicate(existing)); }

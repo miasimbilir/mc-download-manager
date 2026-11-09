@@ -6,8 +6,9 @@ using System.Text.RegularExpressions;
 
 namespace MCDM;
 
-/// Downloads the latest yt-dlp and deno from GitHub into the app data folder so the app can install
-/// them when missing and keep yt-dlp current (YouTube changes break old yt-dlp builds often).
+/// Downloads the latest yt-dlp, ffmpeg and deno from GitHub into the app data folder: none of them comes with the app
+/// (since 2.2.2), the first video download asks for them, and yt-dlp is kept current (YouTube changes break old yt-dlp
+/// builds often).
 public sealed class ToolInstaller : INotifyPropertyChanged
 {
     public static ToolInstaller Shared { get; } = new();
@@ -17,6 +18,7 @@ public sealed class ToolInstaller : INotifyPropertyChanged
     public string? Message { get; private set; }
     public string? YtDlpVersion { get; private set; }
     public string? DenoVersion { get; private set; }
+    public string? FfmpegVersion { get; private set; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Changed() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
@@ -38,11 +40,19 @@ public sealed class ToolInstaller : INotifyPropertyChanged
 
     private static string DenoZipUrl => $"https://github.com/denoland/deno/releases/latest/download/deno-{DenoTriple}.zip";
 
-    /// Approximate download size, shown in the install prompt.
+    /// yt-dlp's own Windows build of FFmpeg, as DLLs beside a small ffmpeg.exe: 86 MB to download where the single-file
+    /// build is 192 MB. Unpacked into a folder of its own, so its DLLs are found next to it.
+    private const string FfmpegBase = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/";
+    private const string FfmpegZip = "ffmpeg-master-latest-win64-gpl-shared.zip";
+
+    /// Approximate download sizes, shown in the install prompt.
     public const string DenoDownloadSize = "~45 MB";
+    public const string YtDlpDownloadSize = "~18 MB";
+    public const string FfmpegDownloadSize = "~86 MB";
 
     public static string UserYtDlpPath => Path.Combine(AppPaths.BinDir, AppPaths.Exe("yt-dlp"));
     public static string UserDenoPath => Path.Combine(AppPaths.BinDir, AppPaths.Exe("deno"));
+    public static string FfmpegDir => Path.Combine(AppPaths.BinDir, "ffmpeg");
 
     public void RefreshVersions(string customYtDlp)
     {
@@ -50,7 +60,8 @@ public sealed class ToolInstaller : INotifyPropertyChanged
         {
             var y = VideoDownloader.LocateYtDlp(customYtDlp) is { } yp ? VideoDownloader.Version(yp) : null;
             var d = VideoDownloader.LocateDeno() is { } dp ? VideoDownloader.Version(dp) : null;
-            MainThread.Post(() => { YtDlpVersion = y; DenoVersion = d; Changed(); });
+            var f = VideoDownloader.LocateFfmpeg() is { } fp ? FfmpegVersionOf(fp) : null;
+            MainThread.Post(() => { YtDlpVersion = y; DenoVersion = d; FfmpegVersion = f; Changed(); });
         });
     }
 
@@ -138,6 +149,15 @@ public sealed class ToolInstaller : INotifyPropertyChanged
                 if (name.Contains(".old-", StringComparison.Ordinal) || name.StartsWith("yt-dlp-new", StringComparison.Ordinal) || name.StartsWith('.'))
                     try { File.Delete(f); } catch { }
             }
+            foreach (var d in Directory.EnumerateDirectories(AppPaths.BinDir))
+            {
+                var name = Path.GetFileName(d);
+                if (name.Contains(".old-", StringComparison.Ordinal) || name.StartsWith('.'))
+                    try { Directory.Delete(d, true); } catch { }
+            }
+            if (Directory.Exists(FfmpegDir))
+                foreach (var f in Directory.EnumerateFiles(FfmpegDir, "*.old-*"))
+                    try { File.Delete(f); } catch { }
         }
         catch { }
     }
@@ -258,5 +278,118 @@ public sealed class ToolInstaller : INotifyPropertyChanged
         try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch { }
         if (error == null) DenoVersion = version;
         return End(version, error, Loc.T("{0} installed.", version ?? "deno"));
+    }
+    /// "ffmpeg version N-128713-g0f89d936b3-20261108 Copyright (c) 2000-2026 the FFmpeg developers" →
+    /// "ffmpeg N-128713-g0f89d936b3-20261108" (the copyright made the settings row and "… installed." read badly);
+    /// ffmpeg answers `-version`, not `--version`.
+    private static string? FfmpegVersionOf(string path) => ShortFfmpegVersion(VideoDownloader.Version(path, 20000, "-version"));
+
+    internal static string? ShortFfmpegVersion(string? line)
+    {
+        if (line == null) return null;
+        var copyright = line.IndexOf(" Copyright", StringComparison.Ordinal);
+        if (copyright > 0) line = line[..copyright];
+        return line.StartsWith("ffmpeg version ", StringComparison.Ordinal) ? "ffmpeg " + line["ffmpeg version ".Length..] : line;
+    }
+
+    /// Downloads yt-dlp's FFmpeg build for Windows, checks it against the release's checksums.sha256, unpacks ffmpeg,
+    /// ffprobe and their DLLs into their own folder in the app data folder and checks that ffmpeg runs. Call on the
+    /// main thread.
+    public async Task<(string? Version, Exception? Error)> InstallFfmpegAsync()
+    {
+        if (Busy) return (null, new DownloadFailure(Loc.T("Another tool install is in progress.")));
+        if (!OperatingSystem.IsWindows()) return (null, new DownloadFailure(Loc.T("ffmpeg can be installed here only on Windows.")));
+        Begin(Loc.T("Downloading ffmpeg…"));
+        var zip = Path.Combine(AppPaths.BinDir, ".ffmpeg.zip");
+        var staging = Path.Combine(AppPaths.BinDir, ".ffmpeg-unpack");
+        string? version = null;
+        Exception? error;
+        try
+        {
+            Directory.CreateDirectory(AppPaths.BinDir);
+            error = await Fetch(FfmpegBase + FfmpegZip, zip);
+            if (error == null)
+            {
+                Message = Loc.T("Verifying…");
+                Changed();
+                (version, error) = await Task.Run(async () =>
+                {
+                    try
+                    {
+                        var sums = await GetText(FfmpegBase + "checksums.sha256").ConfigureAwait(false);
+                        var expected = sums.Split('\n')
+                            .Select(l => l.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+                            .FirstOrDefault(p => p.Length >= 2 && p[1].TrimStart('*') == FfmpegZip)?[0].ToLowerInvariant();
+                        if (expected is not { Length: 64 }) throw new DownloadFailure(Loc.T("Could not fetch the checksum for verification."));
+                        if (Sha256(zip) != expected) throw new DownloadFailure(Loc.T("Checksum mismatch; the download was discarded."));
+                        if (Directory.Exists(staging)) Directory.Delete(staging, true);
+                        var bin = UnpackFfmpeg(zip, staging);
+                        var v = FfmpegVersionOf(bin);
+                        if (v == null || !v.StartsWith("ffmpeg ", StringComparison.Ordinal))
+                            throw new DownloadFailure(Loc.T("The downloaded ffmpeg could not be executed."));
+                        ReplaceFolder(staging, FfmpegDir);
+                        return (v, (Exception?)null);
+                    }
+                    catch (Exception e)
+                    {
+                        return ((string?)null, e);
+                    }
+                });
+            }
+        }
+        catch (Exception e)
+        {
+            error = e;
+        }
+        try { File.Delete(zip); } catch { }
+        try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch { }
+        if (error == null) FfmpegVersion = version;
+        return End(version, error, Loc.T("{0} installed.", version ?? "ffmpeg"));
+    }
+
+    /// From FFmpeg-Builds' zip (`<build>/bin/…`, `<build>/LICENSE.txt`): ffmpeg.exe, ffprobe.exe, the DLLs they load
+    /// and the licence, flat into `folder`. ffplay (a player) is left out. Returns the path of ffmpeg.exe.
+    internal static string UnpackFfmpeg(string zip, string folder)
+    {
+        Directory.CreateDirectory(folder);
+        using var archive = ZipFile.OpenRead(zip);
+        foreach (var entry in archive.Entries)
+        {
+            var parts = entry.FullName.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var name = entry.Name;
+            var wanted = parts.Length == 3 && parts[1] == "bin"
+                    && (name is "ffmpeg.exe" or "ffprobe.exe" || name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                || parts.Length == 2 && name == "LICENSE.txt";
+            // Entry names come from the archive: only a plain file name is written, never a path.
+            if (!wanted || name != Path.GetFileName(name) || name.Contains('\\')) continue;
+            entry.ExtractToFile(Path.Combine(folder, name), overwrite: true);
+        }
+        var exe = Path.Combine(folder, "ffmpeg.exe");
+        if (!File.Exists(exe)) throw new DownloadFailure(Loc.T("The ffmpeg archive could not be unpacked."));
+        return exe;
+    }
+
+    /// Puts the folder `staged` at `destination`. The old folder is first moved aside in one step, so a failure never
+    /// leaves half of it. A video being merged keeps ffmpeg and its DLLs open and the folder cannot move: then each file
+    /// is replaced on its own (a running file can be renamed); the renamed ones go on a later start (CleanUp).
+    private static void ReplaceFolder(string staged, string destination)
+    {
+        if (Directory.Exists(destination))
+        {
+            var aside = destination + ".old-" + DateTime.UtcNow.Ticks;
+            try
+            {
+                Directory.Move(destination, aside);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                foreach (var file in Directory.GetFiles(staged))
+                    ReplaceExecutable(file, Path.Combine(destination, Path.GetFileName(file)));
+                try { Directory.Delete(staged, true); } catch { }
+                return;
+            }
+            try { Directory.Delete(aside, true); } catch { }
+        }
+        Directory.Move(staged, destination);
     }
 }

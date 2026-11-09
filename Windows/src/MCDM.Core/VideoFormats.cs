@@ -56,12 +56,14 @@ public static class VideoFormats
         IReadOnlyDictionary<string, string> headers, string? cookieFile, bool useCookies, string container, CancellationToken ct)
     {
         var merged = useCookies ? VideoDownloader.MergedCookieFile(cookieFile, url.Host) : null;
+        var kind = Links.Playlist(url);
+        // The listing runs alongside: its own copy of the cookies.
+        var listCookies = useCookies && kind != PlaylistKind.None ? VideoDownloader.MergedCookieFile(cookieFile, url.Host) : null;
         try
         {
-            var kind = Links.Playlist(url);
             var listing = kind == PlaylistKind.None
                 ? Task.FromResult<PlaylistInfo?>(null)
-                : ProbePlaylistAsync(executable, url, headers, merged, kind == PlaylistKind.Only, ct);
+                : ProbePlaylistAsync(executable, url, headers, listCookies, kind == PlaylistKind.Only, ct);
             // "-I 1": for an address that is only a playlist, look at its first video instead of all of them.
             var (json, error) = await RunJsonAsync(executable, ["-J", "--no-playlist", "-I", "1"], url, headers, merged, ct).ConfigureAwait(false);
             var playlist = await listing.ConfigureAwait(false);
@@ -81,7 +83,8 @@ public static class VideoFormats
         }
         finally
         {
-            if (merged != null && merged != cookieFile && merged != SiteCookies.FilePath) try { File.Delete(merged); } catch { }
+            foreach (var copy in new[] { merged, listCookies })
+                if (copy != null && copy != cookieFile && copy != SiteCookies.FilePath) try { File.Delete(copy); } catch { }
         }
     }
 

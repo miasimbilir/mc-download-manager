@@ -357,7 +357,8 @@ public sealed class ServerController : INotifyPropertyChanged
                     ["app"] = "MCDownloadManager",
                     ["platform"] = "windows",
                     ["version"] = AppInfo.Version,
-                    ["ytdlp"] = VideoDownloader.LocateYtDlp(settings.YtdlpPath) != null,
+                    // The first video download fetches yt-dlp when it is not there yet.
+                    ["ytdlp"] = true,
                     ["active"] = store.ActiveCount,
                     ["captureExtensions"] = exts,
                     // Extensions compare this with their own version and reload themselves (unpacked) when it differs.

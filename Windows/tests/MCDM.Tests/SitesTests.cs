@@ -227,4 +227,54 @@ public class SitesTests
         var reloaded2 = AppSettings.Load(file);
         Assert.Empty(reloaded2.BrowserOnlySites);
     }
+
+    [Theory]
+    [InlineData("https://drive.google.com/file/d/1AbC-d_9/view?usp=sharing", "https://drive.usercontent.google.com/download?id=1AbC-d_9&export=download")]
+    [InlineData("https://drive.google.com/file/u/1/d/1AbC/view", "https://drive.usercontent.google.com/download?id=1AbC&export=download")]
+    [InlineData("https://drive.google.com/open?id=1AbC", "https://drive.usercontent.google.com/download?id=1AbC&export=download")]
+    [InlineData("https://drive.google.com/uc?export=download&id=1AbC", "https://drive.usercontent.google.com/download?id=1AbC&export=download")]
+    [InlineData("https://docs.google.com/uc?id=1AbC&export=download", "https://drive.usercontent.google.com/download?id=1AbC&export=download")]
+    [InlineData("https://drive.google.com/file/d/1AbC/view?resourcekey=0-xYz", "https://drive.usercontent.google.com/download?id=1AbC&export=download&resourcekey=0-xYz")]
+    [InlineData("https://drive.usercontent.google.com/download?id=1AbC&export=download&confirm=t&uuid=42",
+        "https://drive.usercontent.google.com/download?id=1AbC&export=download&confirm=t&uuid=42")]
+    public void Turns_google_drive_links_into_the_file_server_s_address(string link, string expected) =>
+        Assert.Equal(expected, Sites.DriveDownloadUrl(new Uri(link))?.AbsoluteUri);
+
+    [Theory]
+    [InlineData("https://docs.google.com/document/d/1AbC/edit")]
+    [InlineData("https://drive.google.com/drive/folders/1AbC")]
+    [InlineData("https://example.com/file/d/1AbC/view")]
+    [InlineData("https://drive.google.com.example.com/uc?id=1AbC")]
+    public void Leaves_other_links_alone(string link) => Assert.Null(Sites.DriveDownloadUrl(new Uri(link)));
+
+    [Fact]
+    public void Reads_the_download_anyway_form_of_google_drive_s_virus_scan_page()
+    {
+        const string html = """
+            <!DOCTYPE html><html><head><title>Google Drive - Virus scan warning</title></head><body><div class="uc-main">
+            <p class="uc-warning-caption">Google Drive can't scan this file for viruses.</p>
+            <p class="uc-warning-subcaption"><span class="uc-name-size"><a href="/open?id=1AbC">big.zip</a> (1.2G)</span> is too large.</p>
+            <form id="download-form" action="https://drive.usercontent.google.com/download" method="get">
+            <input type="submit" id="uc-download-link" class="jfk-button" value="Download anyway"/>
+            <input type="hidden" name="id" value="1AbC"><input type="hidden" name="export" value="download">
+            <input type="hidden" name="confirm" value="t"><input type="hidden" name="uuid" value="5f0e-aa&amp;b"></form></div></body></html>
+            """;
+        var page = new Uri("https://drive.usercontent.google.com/download?id=1AbC&export=download");
+        Assert.Equal("https://drive.usercontent.google.com/download?id=1AbC&export=download&confirm=t&uuid=5f0e-aa%26b",
+            Sites.DriveConfirmUrl(html, page)?.AbsoluteUri);
+    }
+
+    [Fact]
+    public void Reads_the_older_virus_scan_page_s_link()
+    {
+        const string html = """<a id="uc-download-link" class="goog-inline-block" href="/uc?export=download&amp;confirm=Xy12&amp;id=1AbC">Download anyway</a>""";
+        Assert.Equal("https://drive.google.com/uc?export=download&confirm=Xy12&id=1AbC",
+            Sites.DriveConfirmUrl(html, new Uri("https://drive.google.com/uc?export=download&id=1AbC"))?.AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("<html><body><p>Sorry, you can't view or download this file at this time.</p><p>Too many users have viewed or downloaded this file recently.</p></body></html>")]
+    [InlineData("""<form id="download-form" action="https://evil.example/steal" method="get"><input type="hidden" name="id" value="1AbC"></form>""")]
+    public void Finds_no_download_on_a_refusal_or_a_form_leading_elsewhere(string html) =>
+        Assert.Null(Sites.DriveConfirmUrl(html, new Uri("https://drive.usercontent.google.com/download?id=1AbC&export=download")));
 }

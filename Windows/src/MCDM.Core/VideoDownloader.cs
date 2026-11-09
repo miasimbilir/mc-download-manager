@@ -23,35 +23,40 @@ public sealed record VideoOptions
 /// with an error and still have files (a playlist with a video that is no longer there).
 public sealed record VideoResult(IReadOnlyList<string> Files, Exception? Error);
 
-/// yt-dlp wrapper. Prefers a user-updated copy in the app data folder, then the bundled one
-/// (tools\ next to the executable), then whatever is on PATH.
+/// yt-dlp wrapper. Prefers the copy the app downloaded into its data folder, then one in tools\ next to the executable
+/// (installs from before 2.2.2 came with it), then whatever is on PATH.
 public static class VideoDownloader
 {
     public static string? LocateYtDlp(string custom) => Locate("yt-dlp", custom);
 
-    public static string? LocateFfmpeg() => Locate("ffmpeg", null, userCopyFirst: false);
+    /// The copy the app downloads (Settings ▸ Video can update it) first, then one left in `tools\` by an install from
+    /// before 2.2.2.
+    public static string? LocateFfmpeg() => Locate("ffmpeg", null, first: ToolInstaller.FfmpegDir);
 
     /// deno is the JavaScript runtime yt-dlp uses to solve YouTube's n/signature challenges.
     /// Without it YouTube downloads fail or lose formats (see https://github.com/yt-dlp/yt-dlp/wiki/EJS).
     public static string? LocateDeno() => Locate("deno", null,
         extra: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".deno", "bin"));
 
-    private static string? Locate(string tool, string? custom, bool userCopyFirst = true, string? extra = null)
+    /// Tests turn this off to see the app as on a computer without the tools installed system-wide.
+    internal static bool SearchSystem { get; set; } = true;
+
+    private static string? Locate(string tool, string? custom, string? first = null, string? extra = null)
     {
         var exe = AppPaths.Exe(tool);
         var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(custom)) candidates.Add(custom.Trim().Trim('"'));
-        var user = Path.Combine(AppPaths.BinDir, exe);
-        var bundled = Path.Combine(AppPaths.BundledToolsDir, exe);
-        if (userCopyFirst) { candidates.Add(user); candidates.Add(bundled); }
-        else { candidates.Add(bundled); candidates.Add(user); }
+        if (first != null) candidates.Add(Path.Combine(first, exe));
+        candidates.Add(Path.Combine(AppPaths.BinDir, exe));
+        candidates.Add(Path.Combine(AppPaths.BundledToolsDir, exe));
         if (extra != null) candidates.Add(Path.Combine(extra, exe));
-        if (!OperatingSystem.IsWindows())
+        if (!OperatingSystem.IsWindows() && SearchSystem)
         {
             candidates.Add("/opt/homebrew/bin/" + exe);
             candidates.Add("/usr/local/bin/" + exe);
         }
         foreach (var c in candidates) if (File.Exists(c)) return c;
+        if (!SearchSystem) return null;
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
             try
@@ -81,7 +86,7 @@ public static class VideoDownloader
     public static void ApplyEnvironment(ProcessStartInfo psi)
     {
         var path = psi.Environment.TryGetValue("PATH", out var p) ? p : Environment.GetEnvironmentVariable("PATH");
-        var extra = new List<string> { AppPaths.BundledToolsDir, AppPaths.BinDir };
+        var extra = new List<string> { ToolInstaller.FfmpegDir, AppPaths.BinDir, AppPaths.BundledToolsDir };    // as Locate
         if (!OperatingSystem.IsWindows()) extra.AddRange(["/opt/homebrew/bin", "/usr/local/bin"]);
         psi.Environment["PATH"] = string.Join(Path.PathSeparator, extra) + Path.PathSeparator + path;
         psi.Environment["PYTHONIOENCODING"] = "utf-8";
@@ -93,16 +98,17 @@ public static class VideoDownloader
 
     /// Combines the per-download cookie file (from the browser extension) with the shared site cookie
     /// file into one temporary Netscape file. The site jar is only attached when the target host
-    /// belongs to one of its domains.
+    /// belongs to one of its domains. Always a copy of its own: yt-dlp writes its cookie file back when it ends, and
+    /// runs side by side (a probe and its playlist listing, several videos) must not write the same file.
+    /// The caller deletes it.
     public static string? MergedCookieFile(string? itemCookies, string? targetHost)
     {
         var item = itemCookies != null && File.Exists(itemCookies) ? itemCookies : null;
         var site = SiteCookies.Shared.AppliesTo(targetHost) ? SiteCookies.FilePath : null;
-        if (item == null) return site;
-        if (site == null) return item;
+        if (item == null && site == null) return null;
         try
         {
-            var body = File.ReadAllText(site) + "\n" + File.ReadAllText(item);
+            var body = (site != null ? File.ReadAllText(site) + "\n" : "") + (item != null ? File.ReadAllText(item) : "");
             Directory.CreateDirectory(AppPaths.CookiesDir);
             var tmp = Path.Combine(AppPaths.CookiesDir, $"merged-{Guid.NewGuid()}.txt");
             File.WriteAllText(tmp, body, new UTF8Encoding(false));
@@ -110,7 +116,7 @@ public static class VideoDownloader
         }
         catch
         {
-            return item;
+            return item ?? site;
         }
     }
 
@@ -294,6 +300,7 @@ public static class VideoDownloader
         }
         catch (Exception e)
         {
+            if (merged != null && merged != cookieFile && merged != SiteCookies.FilePath) try { File.Delete(merged); } catch { }
             onFinish(new VideoResult([], e));
             return null;
         }
@@ -383,7 +390,7 @@ public static class VideoDownloader
     }
 
     /// First line of `<tool> --version` (deno prints three lines; yt-dlp one).
-    public static string? Version(string path, int timeoutMs = 20000)
+    public static string? Version(string path, int timeoutMs = 20000, string argument = "--version")
     {
         try
         {
@@ -391,7 +398,7 @@ public static class VideoDownloader
             {
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
             };
-            psi.ArgumentList.Add("--version");
+            psi.ArgumentList.Add(argument);
             ApplyEnvironment(psi);
             using var p = Process.Start(psi);
             if (p == null) return null;

@@ -7,7 +7,8 @@ public class DownloaderTests
 {
     private sealed record Outcome(Exception? Error, ProbeResult? Probe, long Received, SegmentInfo[] Segments, string Path);
 
-    private static async Task<Outcome> Download(string url, int segments = 8, Dictionary<string, string>? headers = null)
+    private static async Task<Outcome> Download(string url, int segments = 8, Dictionary<string, string>? headers = null,
+        long minSegment = 64 * 1024, TimeSpan? slowWindow = null)
     {
         var part = Path.Combine(Setup.TempDir(), "file.part");
         var done = new TaskCompletionSource<Exception?>();
@@ -16,8 +17,8 @@ public class DownloaderTests
         SegmentInfo[] segs = [];
         var dl = new SegmentedDownloader(new SegmentedDownloader.Configuration
         {
-            Url = new Uri(url), PartPath = part, SegmentCount = segments, MinSegmentSize = 64 * 1024,
-            Headers = headers ?? new(),
+            Url = new Uri(url), PartPath = part, SegmentCount = segments, MinSegmentSize = minSegment,
+            Headers = headers ?? new(), SlowWindow = slowWindow ?? TimeSpan.FromSeconds(6),
         })
         {
             OnProbe = p => probe = p,
@@ -46,6 +47,34 @@ public class DownloaderTests
         Assert.Equal(server.Data.Length, r.Received);
         AssertSame(server.Data, r.Path);
         // probe + one request per part
+        Assert.Equal(1 + r.Segments.Length, server.Requests.Count(q => q.Headers.ContainsKey("Range")));
+    }
+
+    [Fact]
+    public async Task Drops_a_connection_far_slower_than_the_others_and_fetches_its_part_again()
+    {
+        // Four 2 MB parts (too small to split): three come at ~6 MB/s, the third part's connection at ~128 KB/s, which
+        // alone would take some 16 seconds.
+        const int size = 8 * 1024 * 1024, part = size / 4;
+        using var server = new TestServer(size) { ChunkDelayMs = 10, SlowStart = 2 * part, SlowChunkDelayMs = 500 };
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var r = await Download(server.Url("/one-slow"), segments: 4, minSegment: part, slowWindow: TimeSpan.FromMilliseconds(400));
+        Assert.Null(r.Error);
+        AssertSame(server.Data, r.Path);
+        // The rest of that part was asked for again, on a new connection, from where the slow one had got to.
+        Assert.Contains(server.Requests, q => q.Headers.TryGetValue("Range", out var range)
+            && long.Parse(range[6..].Split('-')[0]) is > 2 * part and < 3 * part);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(8), $"took {watch.Elapsed}");
+    }
+
+    [Fact]
+    public async Task Keeps_connections_that_are_all_equally_slow()
+    {
+        using var server = new TestServer(2 * 1024 * 1024) { ChunkDelayMs = 5 };
+        var r = await Download(server.Url("/slow"), segments: 4, slowWindow: TimeSpan.FromMilliseconds(200));
+        Assert.Null(r.Error);
+        AssertSame(server.Data, r.Path);
+        // probe + one request per part: none was dropped and asked for again
         Assert.Equal(1 + r.Segments.Length, server.Requests.Count(q => q.Headers.ContainsKey("Range")));
     }
 

@@ -74,7 +74,7 @@ public class PlaylistTests
         public void ShowDetail(Guid id) { }
         public void DetailCompleted(Guid id, bool autoClose) { }
         public void NotifyCompleted(DownloadItem item) { }
-        public Task<(bool Install, bool DontAskAgain)> AskInstallDenoAsync() => Task.FromResult((false, false));
+        public Task<(bool Install, bool DontAskAgain)> AskInstallToolsAsync(IReadOnlyList<string> tools) => Task.FromResult((false, false));
         public Task<VideoFormatAnswer?> AskVideoFormatAsync(DownloadItem item, VideoInfo info) { Asked = info; return Task.FromResult(choose(info)); }
     }
 

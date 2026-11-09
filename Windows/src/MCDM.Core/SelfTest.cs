@@ -180,8 +180,8 @@ public static class SelfTest
 
         foreach (var (tool, path) in new[] { ("yt-dlp", VideoDownloader.LocateYtDlp("")), ("ffmpeg", VideoDownloader.LocateFfmpeg()), ("deno", VideoDownloader.LocateDeno()) })
         {
-            if (path == null) { Line($"[info] {tool}: not found" + (tool == "deno" ? " (the app offers to install it on the first YouTube download)" : "")); continue; }
-            if (tool == "ffmpeg") { Line($"[info] ffmpeg: {path}"); continue; }
+            if (path == null) { Line($"[info] {tool}: not found (the app offers to download it on the first video download)"); continue; }
+            if (tool == "ffmpeg") { Check(tool, () => $"{VideoDownloader.Version(path, 90000, "-version") ?? throw new Exception("did not run: " + path)} — {path}"); continue; }
             Check(tool, () => $"{VideoDownloader.Version(path, 90000) ?? throw new Exception("did not run: " + path)} — {path}");
         }
 

@@ -206,9 +206,9 @@ public static class Shell
         return space > 0 ? command[..space] : command;
     }
 
-    /// True when this executable has its `tools` folder (yt-dlp, ffmpeg) next to it, i.e. it is a complete
-    /// copy of the app rather than a bare build output.
-    public static bool CompleteCopy => Directory.Exists(AppPaths.BundledToolsDir);
+    /// True when this executable has its `ChromeExtension` folder next to it, i.e. it is a complete copy of the app
+    /// rather than a bare build output.
+    public static bool CompleteCopy => Directory.Exists(Path.Combine(AppPaths.AppDir, "ChromeExtension"));
 
     /// The app comes as a zip, so nothing puts it in the Start menu; without an entry it cannot be found
     /// again after "Quit". Creates Start menu ▸ MC Download Manager for a complete copy, and repairs the
@@ -568,13 +568,14 @@ public static class BrowserIntegration
         Process.Start(psi);
     }
 
-    /// A process of that name with a window (a browser that has finished starting).
+    /// A process of that name with a titled window (a browser that has finished starting). Firefox shows an
+    /// untitled window about 0.2 s after a cold start, long before it takes a second command line: that one does not count.
     private static bool HasWindow(string processName)
     {
         var found = false;
         foreach (var p in Process.GetProcessesByName(processName))
         {
-            try { found |= p.MainWindowHandle != IntPtr.Zero; } catch { }
+            try { found |= p.MainWindowHandle != IntPtr.Zero && !string.IsNullOrWhiteSpace(p.MainWindowTitle); } catch { }
             p.Dispose();
         }
         return found;

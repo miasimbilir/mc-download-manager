@@ -219,6 +219,13 @@ Shot(promo, "promo-detail", () =>
     active.Speed = active.History.Now;
     typeof(DetailWindow).GetMethod("Refresh", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(promo, null);
 });
+// 2.2.2: the one question before the first video download (same text as App.AskInstallToolsAsync).
+Shot(PromptWindow.Create(Loc.T("Download the tools for videos?"),
+    Loc.T("Downloading videos needs these free tools. They are downloaded once from their official GitHub pages, checked, and kept in the app's data folder:") + "\n\n" + string.Join("\n",
+        Loc.T("• yt-dlp ({0}): finds the video and downloads it", ToolInstaller.YtDlpDownloadSize),
+        Loc.T("• ffmpeg ({0}): joins the picture and the sound into one file", ToolInstaller.FfmpegDownloadSize),
+        Loc.T("• deno ({0}): needed to unlock YouTube's video streams", ToolInstaller.DenoDownloadSize)),
+    [Loc.T("Download"), Loc.T("Not Now")], null, 1), "promo-tools");
 app.Settings.Theme = "system";
 
 // An empty list
